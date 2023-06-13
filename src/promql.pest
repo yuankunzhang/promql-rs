@@ -149,7 +149,7 @@ vector_selector = {
 metric_identifier = { identifier }
 label_matchers = { "{" ~ (label_match_list)? ~ "}" }
 label_match_list = _{ label_matcher ~ ("," ~ label_matcher)* }
-label_matcher = _{ identifier ~ match_op ~ string }
+label_matcher = { identifier ~ match_op ~ string }
 match_op = _{ "!=" | "=~" | "!~" | "=" }
 
 /// Strings may be specified as literals in single quotes, double quotes or backticks.
