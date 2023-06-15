@@ -317,9 +317,11 @@ unicode = @{
     | ("U" ~ ASCII_HEX_DIGIT{8})
 }
 
-number = @{ ("+" | "-")? ~ (hex | dec | nan | inf)}
+number = @{ ("+" | "-")? ~ (hex | oct | dec | nan | inf)}
 hex    = @{ "0" ~ ("x" | "X") ~ ASCII_HEX_DIGIT+ }
-dec    = @{ int ~ ("." ~ ASCII_DIGIT+ ~ exp? | exp)? }
+oct    = @{ "0" ~ ('0'..'7')+ }
+dec    = @{ (int ~ frac? ~ exp?) | (frac ~ exp?) }
+frac   = @{ "." ~ ASCII_DIGIT* ~ exp? }
 int    = @{ "0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
 exp    = @{ ("E" | "e") ~ ("+" | "-")? ~ ASCII_DIGIT+ }
 nan    = @{ ("N" | "n") ~ ("A" | "a") ~ ("N" | "n") }

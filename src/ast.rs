@@ -28,7 +28,7 @@ impl Expr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -59,7 +59,7 @@ impl FromStr for BinaryOp {
             "/" => Ok(BinaryOp::Div),
             "%" => Ok(BinaryOp::Mod),
             "^" => Ok(BinaryOp::Pow),
-            "=" => Ok(BinaryOp::Eq),
+            "==" => Ok(BinaryOp::Eq),
             "!=" => Ok(BinaryOp::Ne),
             ">" => Ok(BinaryOp::Gt),
             "<" => Ok(BinaryOp::Lt),
@@ -81,10 +81,10 @@ pub struct BinaryExpr {
     pub rhs: Box<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum UnaryOp {
-    Add,
-    Sub,
+    Pos,
+    Neg,
 }
 
 impl FromStr for UnaryOp {
@@ -92,8 +92,8 @@ impl FromStr for UnaryOp {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "+" => Ok(UnaryOp::Add),
-            "-" => Ok(UnaryOp::Sub),
+            "+" => Ok(UnaryOp::Pos),
+            "-" => Ok(UnaryOp::Neg),
             _ => Err(format!("Unknown unary operator: {}", s)),
         }
     }
