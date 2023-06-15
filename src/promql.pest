@@ -1,6 +1,6 @@
 promql = _{ SOI ~ expr? ~ EOI }
 
-expr   = { prefix* ~ primary ~ (infix ~ primary)* }
+expr   = { prefix* ~ primary ~ (infix ~ prefix* ~ primary)* }
 
 prefix = _{ neg | pos }
 neg    = { "-" }
@@ -25,29 +25,121 @@ unless = { "unless" }
 atan2  = { "atan2" }
 
 primary = _{
-    aggregate_expr
+    number_literal
+    | string_literal
+    | aggregate_expr
     | function_call
     | subquery_expr
     | modifier_expr
-    | number_literal
-    | string_literal
     | paren_expr
 }
 
 aggregate_expr = { aggregate_op ~ (
-    (aggregate_modifier ~ function_call_body?)
+    (aggregate_modifier ~ function_call_body)
     | (function_call_body ~ aggregate_modifier?)
 ) }
-aggregate_op = _{ "avg" | "bottomk" | "count" | "count_values" | "group" | "max" | "min" | "quantile" | "stddev" | "stdvar" | "sum" | "topk" }
-aggregate_modifier = _{ ("by" | "without") ~  grouping_labels }
+aggregate_op = {
+    "avg"
+    | "bottomk"
+    | "count"
+    | "count_values"
+    | "group"
+    | "max"
+    | "min"
+    | "quantile"
+    | "stddev"
+    | "stdvar"
+    | "sum"
+    | "topk"
+}
+aggregate_modifier = { aggregate_modifier_op ~  grouping_labels }
+aggregate_modifier_op = { "by" | "without" }
 
 grouping_labels = _{ "(" ~ grouping_label_list? ~ ")" }
 grouping_label_list = _{ grouping_label ~ ("," ~ grouping_label)* }
 grouping_label = _{ identifier }
 
-function_call = { identifier ~ function_call_body }
+function_call = { function_call_name ~ function_call_body }
 function_call_body = { "(" ~ function_call_args? ~ ")" }
 function_call_args = _{ expr ~ ("," ~ expr)* }
+function_call_name = {
+    "abs"
+    | "absent"
+    | "absent_over_time"
+    | "ceil"
+    | "changes"
+    | "clamp"
+    | "clamp_max"
+    | "clamp_min"
+    | "day_of_month"
+    | "day_of_week"
+    | "day_of_year"
+    | "days_in_month"
+    | "delta"
+    | "deriv"
+    | "exp"
+    | "floor"
+    | "histogram_count"
+    | "histogram_sum"
+    | "histogram_fraction"
+    | "histogram_quantile"
+    | "holt_winters"
+    | "hour"
+    | "idelta"
+    | "increase"
+    | "irate"
+    | "label_join"
+    | "label_replace"
+    | "ln"
+    | "log2"
+    | "log10"
+    | "minute"
+    | "month"
+    | "predict_linear"
+    | "rate"
+    | "resets"
+    | "round"
+    | "scalar"
+    | "sgn"
+    | "sort"
+    | "sort_desc"
+    | "sqrt"
+    | "time"
+    | "timestamp"
+    | "vector"
+    | "year"
+    | aggregation_function
+    | trigonomic_function
+}
+aggregation_function = {
+    "avg_over_time"
+    | "count_over_time"
+    | "max_over_time"
+    | "min_over_time"
+    | "quantile_over_time"
+    | "stddev_over_time"
+    | "stdvar_over_time"
+    | "sum_over_time"
+    | "last_over_time"
+    | "present_over_time"
+}
+trigonomic_function = {
+    "acosh"
+    | "acos"
+    | "asinh"
+    | "asin"
+    | "atanh"
+    | "atan"
+    | "cosh"
+    | "cos"
+    | "sinh"
+    | "sin"
+    | "tanh"
+    | "tan"
+    | "deg"
+    | "pi"
+    | "rad"
+}
 
 paren_expr = { "(" ~ expr ~ ")" }
 
@@ -115,8 +207,8 @@ offset_expr = { "offset" ~ "-"? ~ duration }
 /// 
 ///     http_requests_total @ start()
 ///     rate(http_requests_total[5m] @ end())
-step_invariant_expr = { "@" ~ (number | at_modifier_preprocessors) }
-at_modifier_preprocessors = _{ ("start" | "end") ~ "(" ~ ")" }
+step_invariant_expr = { "@" ~ (number | (at_modifier_preprocessor ~ "(" ~ ")")) }
+at_modifier_preprocessor = { "start" | "end" }
 
 /// Range vector literals work like instant vector literals, except that they select a range of samples back from the current instant. Syntactically, a time duration is appended in square brackets ([]) at the end of a vector selector to specify how far back in time values should be fetched for each resulting range vector element. The range is a closed interval, i.e. samples with timestamps coinciding with either boundary of the range are still included in the selection.
 /// 
@@ -150,7 +242,7 @@ metric_identifier = { identifier }
 label_matchers = { "{" ~ (label_match_list)? ~ "}" }
 label_match_list = _{ label_matcher ~ ("," ~ label_matcher)* }
 label_matcher = { identifier ~ match_op ~ string }
-match_op = _{ "!=" | "=~" | "!~" | "=" }
+match_op = { "!=" | "=~" | "!~" | "=" }
 
 /// Strings may be specified as literals in single quotes, double quotes or backticks.
 ///

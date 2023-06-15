@@ -1,5 +1,6 @@
 use std::{str::FromStr, time::Duration};
-use strum_macros::EnumString;
+
+use crate::functions::*;
 
 #[derive(Debug)]
 pub enum Expr {
@@ -15,7 +16,19 @@ pub enum Expr {
     StringLiteral(StringLiteral),
 }
 
-#[derive(Debug, EnumString)]
+impl Expr {
+    pub fn get_type(&self) -> ValueType {
+        match self {
+            Expr::MatrixSelector(_) => ValueType::Matrix,
+            Expr::VectorSelector(_) => ValueType::Vector,
+            Expr::NumberLiteral(_) => ValueType::Scalar,
+            Expr::StringLiteral(_) => ValueType::String,
+            _ => ValueType::None,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -35,6 +48,32 @@ pub enum BinaryOp {
     Atan2,
 }
 
+impl FromStr for BinaryOp {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "+" => Ok(BinaryOp::Add),
+            "-" => Ok(BinaryOp::Sub),
+            "*" => Ok(BinaryOp::Mul),
+            "/" => Ok(BinaryOp::Div),
+            "%" => Ok(BinaryOp::Mod),
+            "^" => Ok(BinaryOp::Pow),
+            "=" => Ok(BinaryOp::Eq),
+            "!=" => Ok(BinaryOp::Ne),
+            ">" => Ok(BinaryOp::Gt),
+            "<" => Ok(BinaryOp::Lt),
+            ">=" => Ok(BinaryOp::Ge),
+            "<=" => Ok(BinaryOp::Le),
+            "and" => Ok(BinaryOp::And),
+            "or" => Ok(BinaryOp::Or),
+            "unless" => Ok(BinaryOp::Unless),
+            "atan2" => Ok(BinaryOp::Atan2),
+            _ => Err(format!("Unknown binary operator: {}", s)),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct BinaryExpr {
     pub op: BinaryOp,
@@ -42,10 +81,22 @@ pub struct BinaryExpr {
     pub rhs: Box<Expr>,
 }
 
-#[derive(Debug, EnumString)]
+#[derive(Debug)]
 pub enum UnaryOp {
     Add,
     Sub,
+}
+
+impl FromStr for UnaryOp {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "+" => Ok(UnaryOp::Add),
+            "-" => Ok(UnaryOp::Sub),
+            _ => Err(format!("Unknown unary operator: {}", s)),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -59,7 +110,7 @@ pub struct ParenExpr {
     pub expr: Box<Expr>,
 }
 
-#[derive(Debug, EnumString)]
+#[derive(Debug)]
 pub enum AggregateOp {
     Avg,
     Bottomk,
@@ -75,51 +126,68 @@ pub enum AggregateOp {
     Topk,
 }
 
+impl FromStr for AggregateOp {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "avg" => Ok(AggregateOp::Avg),
+            "bottomk" => Ok(AggregateOp::Bottomk),
+            "count" => Ok(AggregateOp::Count),
+            "count_values" => Ok(AggregateOp::CountValues),
+            "group" => Ok(AggregateOp::Group),
+            "max" => Ok(AggregateOp::Max),
+            "min" => Ok(AggregateOp::Min),
+            "stddev" => Ok(AggregateOp::Stddev),
+            "stdvar" => Ok(AggregateOp::Stdvar),
+            "quantile" => Ok(AggregateOp::Quantile),
+            "sum" => Ok(AggregateOp::Sum),
+            "topk" => Ok(AggregateOp::Topk),
+            _ => Err(format!("Unknown aggregate operator: {}", s)),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum AggregateModifier {
+    None,
+    By(Vec<String>),
+    Without(Vec<String>),
+}
+
 #[derive(Debug)]
 pub struct AggregateExpr {
     pub op: AggregateOp,
     pub expr: Box<Expr>,
-    pub param: Box<Expr>,
-    pub grouping: Vec<String>,
-    pub without: bool,
-}
-
-#[derive(Debug, EnumString)]
-pub enum ValueType {
-    None,
-    Vector,
-    Scalar,
-    Matrix,
-    String,
+    pub modifier: AggregateModifier,
 }
 
 #[derive(Debug)]
-pub struct Function {
-    pub name: String,
-    pub variadic: u32,
-    pub arg_types: Vec<ValueType>,
-    pub return_type: ValueType,
+pub enum AtModifier {
+    None,
+    Start,
+    End,
+    Time(u64),
+}
+
+#[derive(Debug)]
+pub enum OffsetModifier {
+    None,
+    Duration(Duration),
 }
 
 #[derive(Debug)]
 pub struct FunctionCall {
-    pub func: Function,
+    pub func: &'static Function,
     pub args: Vec<Expr>,
-}
-
-#[derive(Debug)]
-pub enum AtModifierOp {
-    Start,
-    End,
 }
 
 #[derive(Debug)]
 pub struct SubqueryExpr {
     pub expr: Box<Expr>,
     pub range: Duration,
-    pub offset: Duration,
     pub step: Duration,
-    pub at_modifier_op: AtModifierOp,
+    pub at: AtModifier,
 }
 
 #[derive(Debug)]
@@ -132,8 +200,8 @@ pub struct MatrixSelector {
 pub struct VectorSelector {
     pub metric: String,
     pub label_matchers: Vec<LabelMatcher>,
-    pub offset: Duration,
-    pub at_modifier_op: AtModifierOp,
+    pub offset: OffsetModifier,
+    pub at: AtModifier,
 }
 
 #[derive(Debug)]
@@ -142,6 +210,20 @@ pub enum MatchOp {
     NotEqual,
     Regex,
     NNotRegex,
+}
+
+impl FromStr for MatchOp {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "=" => Ok(MatchOp::Equal),
+            "!=" => Ok(MatchOp::NotEqual),
+            "=~" => Ok(MatchOp::Regex),
+            "!~" => Ok(MatchOp::NNotRegex),
+            _ => Err(format!("Unknown match operator: {}", s)),
+        }
+    }
 }
 
 #[derive(Debug)]
