@@ -6,30 +6,49 @@ prefix = _{ neg | pos }
 neg    = { "-" }
 pos    = { "+" }
 
-infix  = _{ add | sub | mul | div | mod_ | pow | eq | ne | le | lt | ge | gt | and | or | unless | atan2 }
-add    = { "+" }
-sub    = { "-" }
-mul    = { "*" }
-div    = { "/" }
-mod_   = { "%" }
-pow    = { "^" }
-eq     = { "==" }
-ne     = { "!=" }
-le     = { "<=" }
-lt     = { "<" }
-ge     = { ">=" }
-gt     = { ">" }
-and    = { "and" }
-or     = { "or" }
-unless = { "unless" }
-atan2  = { "atan2" }
+infix  = _{ add | sub | mul | div | mod | pow | eq | ne | le | lt | ge | gt | and | or | unless | atan2 }
+
+add    = { _add ~ bin_modifier? }
+sub    = { _sub ~ bin_modifier? }
+mul    = { _mul ~ bin_modifier? }
+div    = { _div ~ bin_modifier? }
+mod    = { _mod ~ bin_modifier? }
+pow    = { _pow ~ bin_modifier? }
+eq     = { _eq ~ bin_modifier? }
+ne     = { _ne ~ bin_modifier? }
+le     = { _le ~ bin_modifier? }
+lt     = { _lt ~ bin_modifier? }
+ge     = { _ge ~ bin_modifier? }
+gt     = { _gt ~ bin_modifier? }
+and    = { _and ~ bin_modifier? }
+or     = { _or ~ bin_modifier? }
+unless = { _unless ~ bin_modifier? }
+atan2  = { _atan2 ~ bin_modifier? }
+
+_add    = { "+" }
+_sub    = { "-" }
+_mul    = { "*" }
+_div    = { "/" }
+_mod    = { "%" }
+_pow    = { "^" }
+_eq     = { "==" }
+_ne     = { "!=" }
+_le     = { "<=" }
+_lt     = { "<" }
+_ge     = { ">=" }
+_gt     = { ">" }
+_and    = { "and" }
+_or     = { "or" }
+_unless = { "unless" }
+_atan2  = { "atan2" }
+
+bin_modifier = { "bool" }
 
 primary = _{
     number_literal
     | string_literal
     | aggregate_expr
     | function_call
-    | subquery_expr
     | modifier_expr
     | paren_expr
 }
@@ -143,13 +162,13 @@ trigonomic_function = {
 
 paren_expr = { "(" ~ expr ~ ")" }
 
-subquery_expr = { vector_selector ~ "[" ~ duration ~ ":" ~ duration ~ "]" }
-
-modifier_expr = { matrix_selector ~ modifiers? }
+modifier_expr = { (subquery_expr | matrix_selector) ~ modifiers? }
 modifiers = {
     (offset_expr ~ step_invariant_expr?)
     | (step_invariant_expr ~ offset_expr?)
 }
+
+subquery_expr = { vector_selector ~ "[" ~ duration ~ ":" ~ duration? ~ "]" }
 
 /// The offset modifier allows changing the time offset for individual instant and range vectors in a query.
 /// 

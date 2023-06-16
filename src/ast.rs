@@ -79,6 +79,7 @@ pub struct BinaryExpr {
     pub op: BinaryOp,
     pub lhs: Box<Expr>,
     pub rhs: Box<Expr>,
+    pub return_bool: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -187,7 +188,6 @@ pub struct SubqueryExpr {
     pub expr: Box<Expr>,
     pub range: Duration,
     pub step: Duration,
-    pub at: AtModifier,
 }
 
 #[derive(Debug)]
@@ -202,6 +202,17 @@ pub struct VectorSelector {
     pub label_matchers: Vec<LabelMatcher>,
     pub offset: OffsetModifier,
     pub at: AtModifier,
+}
+
+impl VectorSelector {
+    pub fn from_str(metric: &str) -> Self {
+        VectorSelector {
+            metric: metric.to_string(),
+            label_matchers: Vec::new(),
+            offset: OffsetModifier::None,
+            at: AtModifier::None,
+        }
+    }
 }
 
 #[derive(Debug)]
