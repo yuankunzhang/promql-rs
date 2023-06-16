@@ -204,17 +204,6 @@ pub struct VectorSelector {
     pub at: AtModifier,
 }
 
-impl VectorSelector {
-    pub fn from_str(metric: &str) -> Self {
-        VectorSelector {
-            metric: metric.to_string(),
-            label_matchers: Vec::new(),
-            offset: OffsetModifier::None,
-            at: AtModifier::None,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum MatchOp {
     Equal,
