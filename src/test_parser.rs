@@ -1,3 +1,5 @@
+use std::vec;
+
 use crate::ast::*;
 use crate::parser::parse;
 
@@ -64,6 +66,24 @@ fn new_bool_binary_expr(op: BinaryOp, lhs: Expr, rhs: Expr) -> Expr {
         return_bool: true,
         vector_modifier: VectorModifier::None,
         group_modifier: GroupModifier::None,
+    })
+}
+
+fn new_binary_expr_with_modifiers(
+    op: BinaryOp,
+    lhs: Expr,
+    rhs: Expr,
+    return_bool: bool,
+    vector_modifier: VectorModifier,
+    group_modifier: GroupModifier,
+) -> Expr {
+    Expr::BinaryExpr(BinaryExpr {
+        op,
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+        return_bool,
+        vector_modifier,
+        group_modifier,
     })
 }
 
@@ -418,6 +438,172 @@ fn multi_vector_binary_expr() {
                 new_vector_selector("baz"),
             ),
             new_vector_selector("qux"),
+        ),
+    );
+}
+
+#[test]
+fn vector_binary_expr_with_modifiers() {
+    assert_parse(
+        "bar + on(foo) bla / on(baz, buz) group_right(test) blub",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::Add,
+            new_vector_selector("bar"),
+            new_binary_expr_with_modifiers(
+                BinaryOp::Div,
+                new_vector_selector("bla"),
+                new_vector_selector("blub"),
+                false,
+                VectorModifier::On(vec!["baz".to_string(), "buz".to_string()]),
+                GroupModifier::Right(vec!["test".to_string()]),
+            ),
+            false,
+            VectorModifier::On(vec!["foo".to_string()]),
+            GroupModifier::None,
+        ),
+    );
+
+    assert_parse(
+        "foo * on(test,blub) bar",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::Mul,
+            new_vector_selector("foo"),
+            new_vector_selector("bar"),
+            false,
+            VectorModifier::On(vec!["test".to_string(), "blub".to_string()]),
+            GroupModifier::None,
+        ),
+    );
+
+    assert_parse(
+        "foo * on(test,blub) group_left bar",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::Mul,
+            new_vector_selector("foo"),
+            new_vector_selector("bar"),
+            false,
+            VectorModifier::On(vec!["test".to_string(), "blub".to_string()]),
+            GroupModifier::Left(vec![]),
+        ),
+    );
+
+    assert_parse(
+        "foo and on(test,blub) bar",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::And,
+            new_vector_selector("foo"),
+            new_vector_selector("bar"),
+            false,
+            VectorModifier::On(vec!["test".to_string(), "blub".to_string()]),
+            GroupModifier::None,
+        ),
+    );
+
+    assert_parse(
+        "foo and on() bar",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::And,
+            new_vector_selector("foo"),
+            new_vector_selector("bar"),
+            false,
+            VectorModifier::On(vec![]),
+            GroupModifier::None,
+        ),
+    );
+
+    assert_parse(
+        "foo and ignoring(test,blub) bar",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::And,
+            new_vector_selector("foo"),
+            new_vector_selector("bar"),
+            false,
+            VectorModifier::Ignoring(vec!["test".to_string(), "blub".to_string()]),
+            GroupModifier::None,
+        ),
+    );
+
+    assert_parse(
+        "foo and ignoring() bar",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::And,
+            new_vector_selector("foo"),
+            new_vector_selector("bar"),
+            false,
+            VectorModifier::Ignoring(vec![]),
+            GroupModifier::None,
+        ),
+    );
+
+    assert_parse(
+        "foo unless on(bar) baz",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::Unless,
+            new_vector_selector("foo"),
+            new_vector_selector("baz"),
+            false,
+            VectorModifier::On(vec!["bar".to_string()]),
+            GroupModifier::None,
+        ),
+    );
+
+    assert_parse(
+        "foo / on(test,blub) group_left(bar) baz",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::Div,
+            new_vector_selector("foo"),
+            new_vector_selector("baz"),
+            false,
+            VectorModifier::On(vec!["test".to_string(), "blub".to_string()]),
+            GroupModifier::Left(vec!["bar".to_string()]),
+        ),
+    );
+
+    assert_parse(
+        "foo / ignoring(test,blub) group_left(blub) bar",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::Div,
+            new_vector_selector("foo"),
+            new_vector_selector("bar"),
+            false,
+            VectorModifier::Ignoring(vec!["test".to_string(), "blub".to_string()]),
+            GroupModifier::Left(vec!["blub".to_string()]),
+        ),
+    );
+
+    assert_parse(
+        "foo / ignoring(test,blub) group_left(bar) bar",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::Div,
+            new_vector_selector("foo"),
+            new_vector_selector("bar"),
+            false,
+            VectorModifier::Ignoring(vec!["test".to_string(), "blub".to_string()]),
+            GroupModifier::Left(vec!["bar".to_string()]),
+        ),
+    );
+
+    assert_parse(
+        "foo - on(test,blub) group_right(bar,foo) bar",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::Sub,
+            new_vector_selector("foo"),
+            new_vector_selector("bar"),
+            false,
+            VectorModifier::On(vec!["test".to_string(), "blub".to_string()]),
+            GroupModifier::Right(vec!["bar".to_string(), "foo".to_string()]),
+        ),
+    );
+
+    assert_parse(
+        "foo - ignoring(test,blub) group_right(bar,foo) bar",
+        &new_binary_expr_with_modifiers(
+            BinaryOp::Sub,
+            new_vector_selector("foo"),
+            new_vector_selector("bar"),
+            false,
+            VectorModifier::Ignoring(vec!["test".to_string(), "blub".to_string()]),
+            GroupModifier::Right(vec!["bar".to_string(), "foo".to_string()]),
         ),
     );
 }
