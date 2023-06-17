@@ -249,11 +249,43 @@ pub struct LabelMatcher {
     pub value: String,
 }
 
+/// Number literals can be written as literal integer (octal, decimal, or
+/// hexadecimal) or floating-point numbers in the format:
+///
+/// [-+]?(
+///       [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
+///     | 0[xX][0-9a-fA-F]+
+///     | [nN][aA][nN]
+///     | [iI][nN][fF]
+/// )
+///
+/// Examples:
+///
+///     23
+///     -2.43
+///     3.4e-9
+///     0x8f
+///     -Inf
+///     NaN
 #[derive(Debug)]
 pub struct NumberLiteral {
     pub value: f64,
 }
 
+/// String literals may be specified as literals in single quotes, double quotes
+/// or backticks.
+///
+/// In single or double quotes a backslash begins an escape sequence, which may
+/// be followed by a, b, f, n, r, t, v or \. Specific characters can be provided
+/// using octal (\nnn) or hexadecimal (\xnn, \unnnn and \Unnnnnnnn).
+///
+/// No escaping is processed inside backticks.
+///
+/// Example:
+///
+///     "this is a string"
+///     'these are unescaped: \n \\ \t'
+///     `these are not unescaped: \n ' " \t`
 #[derive(Debug)]
 pub struct StringLiteral {
     pub value: String,

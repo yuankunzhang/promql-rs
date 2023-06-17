@@ -464,14 +464,49 @@ fn parse_label_matchers(pair: Pair<Rule>) -> Result<Vec<LabelMatcher>, ParseErro
 
 fn parse_string_literal(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     Ok(Expr::StringLiteral(StringLiteral {
-        value: pair
-            .into_inner()
-            .next()
-            .unwrap()
-            .as_str()
-            .trim_matches(&['"', '\'', '`'] as &[_])
-            .to_string(),
+        value: trim_and_unescape(pair.into_inner().next().unwrap().as_str()),
     }))
+}
+
+/// Unescape the provided string.
+fn trim_and_unescape(s: &str) -> String {
+    if s.starts_with(|c| c == '\'' || c == '"') {
+        unescape(trim(s))
+    } else {
+        trim(s).to_string()
+    }
+}
+
+fn trim(s: &str) -> &str {
+    s.trim_matches(&['"', '\'', '`'] as &[_])
+}
+
+fn unescape(s: &str) -> String {
+    let mut string = String::new();
+    let mut chars = s.chars().peekable();
+
+    while let Some(current) = chars.next() {
+        if current == '\\' && chars.peek().is_some() {
+            string.push(match chars.next().unwrap() {
+                '\\' => '\\',
+                '"' => '"',
+                '\'' => '\'',
+                '/' => '/',
+                'a' => char::from(0x07),
+                'b' => char::from(0x08),
+                'f' => char::from(0x0C),
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                'v' => char::from(0x0B),
+                c => c,
+            });
+        } else {
+            string.push(current);
+        }
+    }
+
+    string
 }
 
 fn parse_number_literal(pair: Pair<Rule>) -> Result<Expr, ParseError> {

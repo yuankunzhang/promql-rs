@@ -6,7 +6,7 @@ mod functions;
 mod parser;
 
 fn main() {
-    let tree = parser::parse("bar + on(foo) bla / on(baz, buz) group_right(test) blub")
+    let tree = parser::parse(r#""double-quoted string \" with escaped quote""#)
         .unwrap_or_else(|e| panic!("{}", e));
     println!("{:#?}", tree);
 }

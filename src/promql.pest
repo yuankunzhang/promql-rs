@@ -268,37 +268,8 @@ label_matchers = { "{" ~ (label_match_list)? ~ "}" }
 label_match_list = _{ label_matcher ~ ("," ~ label_matcher)* }
 label_matcher = { identifier ~ match_op ~ string }
 match_op = { "!=" | "=~" | "!~" | "=" }
-
-/// Strings may be specified as literals in single quotes, double quotes or backticks.
-///
-/// PromQL follows the same escaping rules as Go. In single or double quotes a backslash begins an escape sequence, which may be followed by a, b, f, n, r, t, v or \. Specific characters can be provided using octal (\nnn) or hexadecimal (\xnn, \unnnn and \Unnnnnnnn).
-///
-/// No escaping is processed inside backticks. Unlike Go, Prometheus does not discard newlines inside backticks.
-///
-/// Example:
-///
-///     "this is a string"
-///     'these are unescaped: \n \\ \t'
-///     `these are not unescaped: \n ' " \t`
 string_literal = { string }
 
-/// Scalar float values can be written as literal integer or floating-point numbers in the format (whitespace only included for better readability):
-/// 
-/// [-+]?(
-///       [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
-///     | 0[xX][0-9a-fA-F]+
-///     | [nN][aA][nN]
-///     | [iI][nN][fF]
-/// )
-/// 
-/// Examples:
-/// 
-///     23
-///     -2.43
-///     3.4e-9
-///     0x8f
-///     -Inf
-///     NaN
 number_literal = { number }
 
 /// Time durations are specified as a number, followed immediately by one of the following units:
@@ -329,12 +300,17 @@ duration = @{
     ~ (int ~ "ms")?
 }
 
-string = @{
-    "\"" ~ ((!"\"" ~ ANY) | escape)* ~ "\""
-    | "'" ~ ((!"'" ~ ANY) | escape)* ~ "'"
-    | "`" ~ (!"`" ~ ANY)* ~ "`"
-}
-escape = @{ "\\" ~ ("\\" | "/" | "a" | "b" | "f" | "n" | "r" | "t" | "v" | unicode) }
+//string  = @{
+//    "\"" ~ ((!("\"" | "\\") ~ ANY) | escape)* ~ "\""
+//    | "'" ~ ((!"'" ~ ANY) | escape)* ~ "'"
+//    | "`" ~ (!"`" ~ ANY)* ~ "`"
+//}
+string                 = @{ double_quoted_string | single_quoted_string | backtick_quoted_string }
+double_quoted_string   = @{ "\"" ~ ((!("\"" | "\\") ~ ANY) | escape)* ~ "\"" }
+single_quoted_string   = @{ "'" ~ ((!("'" | "\\") ~ ANY) | escape)* ~ "'" }
+backtick_quoted_string = @{ "`" ~ (!"`" ~ ANY)* ~ "`" }
+
+escape  = @{ "\\" ~ ("\\" | "\"" | "'" | "/" | "a" | "b" | "f" | "n" | "r" | "t" | "v" | unicode) }
 unicode = @{
     ("n" ~ ASCII_DIGIT{2})
     | ("x" ~ ASCII_HEX_DIGIT{2})

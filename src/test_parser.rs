@@ -21,6 +21,9 @@ fn assert_parse_inner(a: &Expr, b: &Expr) {
         (Expr::VectorSelector(a), Expr::VectorSelector(b)) => {
             assert_eq!(a.metric, b.metric);
         }
+        (Expr::StringLiteral(a), Expr::StringLiteral(b)) => {
+            assert_eq!(a.value, b.value);
+        }
         (Expr::NumberLiteral(a), Expr::NumberLiteral(b)) => {
             match (a.value.is_nan(), b.value.is_nan()) {
                 (true, true) => {}
@@ -39,6 +42,12 @@ fn assert_parse(s: &str, e: &Expr) {
 
 fn new_number_literal(value: f64) -> Expr {
     Expr::NumberLiteral(NumberLiteral { value })
+}
+
+fn new_string_literal(value: &str) -> Expr {
+    Expr::StringLiteral(StringLiteral {
+        value: value.to_string(),
+    })
 }
 
 fn new_unary_expr(op: UnaryOp, rhs: Expr) -> Expr {
@@ -113,7 +122,7 @@ fn new_paren_expr(expr: Expr) -> Expr {
 }
 
 #[test]
-fn number_literals() {
+fn number_literal() {
     assert_parse("1", &new_number_literal(1.0));
     assert_parse("+Inf", &new_number_literal(std::f64::INFINITY));
     assert_parse("-Inf", &new_number_literal(std::f64::NEG_INFINITY));
@@ -128,6 +137,24 @@ fn number_literals() {
     assert_parse("0755", &new_number_literal(493.0));
     assert_parse("-0755", &new_number_literal(-493.0));
     assert_parse("+5.5e-3", &new_number_literal(0.0055));
+}
+
+#[test]
+fn string_literal() {
+    assert_parse(
+        r#""double-quoted string \" with escaped quote""#,
+        &new_string_literal(r#"double-quoted string " with escaped quote"#),
+    );
+
+    assert_parse(
+        r#"'single-quoted string \' with escaped quote'"#,
+        &new_string_literal(r#"single-quoted string ' with escaped quote"#),
+    );
+
+    assert_parse(
+        r#"`backtick-quoted string`"#,
+        &new_string_literal(r#"backtick-quoted string"#),
+    );
 }
 
 #[test]
