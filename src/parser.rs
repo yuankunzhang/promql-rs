@@ -15,6 +15,17 @@ lazy_static::lazy_static! {
     static ref PRATT_PARSER: PrattParser<Rule> = {
         use Rule::*;
 
+        // Operator precedence, from highest to lowest:
+        // 1. ^
+        // 2. - + (unary)
+        // 3. * / % atan2
+        // 4. - + (binary)
+        // 5. == != <= < >= >
+        // 6. and unless
+        // 7. or
+        //
+        // Operators on the same precedence level are left-associated, except
+        // for ^ which is right-associated.
         PrattParser::new()
             .op(Op::infix(or, Left))
             .op(Op::infix(and, Left) | Op::infix(unless, Left))
@@ -62,6 +73,7 @@ where
     }
 }
 
+/// Parse a PromQL expression.
 pub fn parse(promql: &str) -> Result<Expr, ParseError> {
     let mut pairs = PromQLParser::parse(Rule::promql, promql)?;
     Ok(parse_expr(pairs.next().unwrap())?)
@@ -73,53 +85,17 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
         Rule::aggregate_expr => parse_aggregate_expr(primary),
         Rule::function_call => parse_function_call(primary),
         Rule::modifier_expr => parse_modifier_expr(primary),
-        Rule::subquery_expr => parse_subquery_expr(primary, OffsetModifier::None, AtModifier::None),
-        Rule::matrix_selector => {
-            parse_matrix_selector(primary, OffsetModifier::None, AtModifier::None)
-        }
-        Rule::vector_selector => {
-            parse_vector_selector(primary, OffsetModifier::None, AtModifier::None)
-        }
+        Rule::subquery_expr => parse_subquery_expr(primary),
+        Rule::matrix_selector => parse_matrix_selector(primary),
+        Rule::vector_selector => parse_vector_selector(primary),
         Rule::string_literal => parse_string_literal(primary),
         Rule::number_literal => parse_number_literal(primary),
         _ => unreachable!(),
     };
 
-    let parse_prefix = |op: Pair<Rule>, rhs: Result<Expr, ParseError>| {
-        let rhs = rhs.unwrap();
-        match rhs {
-            Expr::NumberLiteral(n) => match op.as_str() {
-                "+" => return Ok(Expr::NumberLiteral(NumberLiteral { value: n.value })),
-                "-" => return Ok(Expr::NumberLiteral(NumberLiteral { value: -n.value })),
-                _ => Err(ParseError {
-                    message: "invalid operator before number literal".to_string(),
-                }),
-            },
-            _ => Ok(Expr::UnaryExpr(UnaryExpr {
-                op: UnaryOp::from_str(op.as_str()).unwrap(),
-                rhs: Box::new(rhs),
-            })),
-        }
-    };
+    let parse_prefix = |op, rhs| parse_unary_expr(op, rhs);
 
-    let parse_infix =
-        |lhs: Result<Expr, ParseError>, op: Pair<Rule>, rhs: Result<Expr, ParseError>| {
-            let mut pairs = op.into_inner();
-            let op = BinaryOp::from_str(pairs.next().unwrap().as_str()).unwrap();
-            let (return_bool, vector_modifier, group_modifier) = if pairs.peek().is_none() {
-                (false, VectorModifier::None, GroupModifier::None)
-            } else {
-                parse_binary_modifiers(pairs.next().unwrap()).unwrap()
-            };
-            Ok(Expr::BinaryExpr(BinaryExpr {
-                op,
-                lhs: Box::new(lhs.unwrap()),
-                rhs: Box::new(rhs.unwrap()),
-                return_bool,
-                vector_modifier,
-                group_modifier,
-            }))
-        };
+    let parse_infix = |lhs, op, rhs| parse_binary_expr(lhs, op, rhs);
 
     PRATT_PARSER
         .map_primary(parse_primary)
@@ -128,70 +104,93 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
         .parse(pair.into_inner())
 }
 
+fn parse_binary_expr(
+    lhs: Result<Expr, ParseError>,
+    op: Pair<Rule>,
+    rhs: Result<Expr, ParseError>,
+) -> Result<Expr, ParseError> {
+    let mut pairs = op.into_inner();
+    let op = BinaryOp::from_str(pairs.next().unwrap().as_str()).unwrap();
+    let (return_bool, vector_modifier, group_modifier) =
+        parse_binary_modifiers(pairs.next()).unwrap();
+    Ok(Expr::BinaryExpr(BinaryExpr {
+        op,
+        lhs: Box::new(lhs.unwrap()),
+        rhs: Box::new(rhs.unwrap()),
+        return_bool,
+        vector_modifier,
+        group_modifier,
+    }))
+}
+
 fn parse_binary_modifiers(
-    pair: Pair<Rule>,
+    pair: Option<Pair<Rule>>,
 ) -> Result<(bool, VectorModifier, GroupModifier), ParseError> {
-    let mut pairs = pair.into_inner();
     let mut return_bool = false;
     let mut vector_modifier = VectorModifier::None;
     let mut group_modifier = GroupModifier::None;
 
-    if pairs.peek().is_none() {
+    if pair.is_none() {
         return Ok((return_bool, vector_modifier, group_modifier));
     }
 
-    return_bool = pairs.peek().unwrap().as_rule() == Rule::bool_modifier
-        && pairs.next().unwrap().as_str() == "bool";
+    let mut pairs = pair.unwrap().into_inner();
 
-    if pairs.peek().is_none() {
-        return Ok((return_bool, vector_modifier, group_modifier));
-    }
-
-    let mut vector_modifier_pairs = pairs.next().unwrap().into_inner();
-    vector_modifier = match vector_modifier_pairs.next().unwrap().as_str() {
-        "on" => VectorModifier::On(
-            vector_modifier_pairs
-                .map(|s| s.as_str().to_string())
-                .collect(),
-        ),
-        "ignoring" => VectorModifier::Ignoring(
-            vector_modifier_pairs
-                .map(|s| s.as_str().to_string())
-                .collect(),
-        ),
-        _ => {
-            return Err(ParseError::new(format!(
-                "unknown vector modifier: {}",
-                vector_modifier_pairs.as_str()
-            )))
+    if let Some(pair) = pairs.peek() {
+        if pair.as_rule() == Rule::bool_modifier {
+            return_bool = pairs.next().unwrap().as_str() == "bool";
         }
-    };
-
-    if pairs.peek().is_none() {
-        return Ok((return_bool, vector_modifier, group_modifier));
     }
 
-    let mut group_modifier_pairs = pairs.next().unwrap().into_inner();
-    group_modifier = match group_modifier_pairs.next().unwrap().as_str() {
-        "group_left" => GroupModifier::Left(
-            group_modifier_pairs
-                .map(|s| s.as_str().to_string())
-                .collect(),
-        ),
-        "group_right" => GroupModifier::Right(
-            group_modifier_pairs
-                .map(|s| s.as_str().to_string())
-                .collect(),
-        ),
-        _ => {
-            return Err(ParseError::new(format!(
-                "unknown group modifier: {}",
-                group_modifier_pairs.as_str()
-            )))
-        }
-    };
+    if let Some(_) = pairs.peek() {
+        let mut vector_modifier_pairs = pairs.next().unwrap().into_inner();
+        vector_modifier = match vector_modifier_pairs.next().unwrap().as_str() {
+            "on" => VectorModifier::On(
+                vector_modifier_pairs
+                    .map(|s| s.as_str().to_string())
+                    .collect(),
+            ),
+            "ignoring" => VectorModifier::Ignoring(
+                vector_modifier_pairs
+                    .map(|s| s.as_str().to_string())
+                    .collect(),
+            ),
+            _ => unreachable!(),
+        };
+    }
+
+    if let Some(_) = pairs.peek() {
+        let mut group_modifier_pairs = pairs.next().unwrap().into_inner();
+        group_modifier = match group_modifier_pairs.next().unwrap().as_str() {
+            "group_left" => GroupModifier::Left(
+                group_modifier_pairs
+                    .map(|s| s.as_str().to_string())
+                    .collect(),
+            ),
+            "group_right" => GroupModifier::Right(
+                group_modifier_pairs
+                    .map(|s| s.as_str().to_string())
+                    .collect(),
+            ),
+            _ => unreachable!(),
+        };
+    }
 
     Ok((return_bool, vector_modifier, group_modifier))
+}
+
+fn parse_unary_expr(op: Pair<Rule>, rhs: Result<Expr, ParseError>) -> Result<Expr, ParseError> {
+    match rhs.unwrap() {
+        Expr::NumberLiteral(n) => match op.as_str() {
+            "+" => return Ok(Expr::NumberLiteral(NumberLiteral { value: n.value })),
+            "-" => return Ok(Expr::NumberLiteral(NumberLiteral { value: -n.value })),
+            _ => unreachable!(),
+        },
+        expr => Ok(Expr::UnaryExpr(UnaryExpr {
+            op: UnaryOp::from_str(op.as_str()).unwrap(),
+            rhs: Box::new(expr),
+        })),
+    }
 }
 
 fn parse_paren_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
@@ -245,12 +244,7 @@ fn parse_aggregate_modifier(pair: Pair<Rule>) -> Result<AggregateModifier, Parse
     match m.as_str() {
         "by" => Ok(AggregateModifier::By(labels)),
         "without" => Ok(AggregateModifier::Without(labels)),
-        _ => {
-            return Err(ParseError::new(format!(
-                "unknown aggregate modifier: {}",
-                m.as_str()
-            )))
-        }
+        _ => unreachable!(),
     }
 }
 
@@ -301,8 +295,8 @@ fn parse_modifier_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     }
 
     match pair.as_rule() {
-        Rule::subquery_expr => parse_subquery_expr(pair, offset, at),
-        Rule::matrix_selector => parse_matrix_selector(pair, offset, at),
+        Rule::subquery_expr => parse_subquery_expr_with_modifiers(pair, offset, at),
+        Rule::matrix_selector => parse_matrix_selector_with_modifiers(pair, offset, at),
         _ => unreachable!("parse_modifier_expr: {:#?}", pair),
     }
 }
@@ -328,13 +322,17 @@ fn parse_offset_modifier(pair: Pair<Rule>) -> OffsetModifier {
     OffsetModifier::Duration(duration)
 }
 
-fn parse_subquery_expr(
+fn parse_subquery_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
+    parse_subquery_expr_with_modifiers(pair, OffsetModifier::None, AtModifier::None)
+}
+
+fn parse_subquery_expr_with_modifiers(
     pair: Pair<Rule>,
     offset: OffsetModifier,
     at: AtModifier,
 ) -> Result<Expr, ParseError> {
     let mut pairs = pair.into_inner();
-    let vector_selector = parse_vector_selector(pairs.next().unwrap(), offset, at)?;
+    let vector_selector = parse_vector_selector_with_modifiers(pairs.next().unwrap(), offset, at)?;
 
     let range = parse_duration(pairs.next().unwrap())?;
     let step = if pairs.peek().is_some() {
@@ -350,13 +348,17 @@ fn parse_subquery_expr(
     }))
 }
 
-fn parse_matrix_selector(
+fn parse_matrix_selector(pair: Pair<Rule>) -> Result<Expr, ParseError> {
+    parse_matrix_selector_with_modifiers(pair, OffsetModifier::None, AtModifier::None)
+}
+
+fn parse_matrix_selector_with_modifiers(
     pair: Pair<Rule>,
     offset: OffsetModifier,
     at: AtModifier,
 ) -> Result<Expr, ParseError> {
     let mut pairs = pair.into_inner();
-    let vector_selector = parse_vector_selector(pairs.next().unwrap(), offset, at)?;
+    let vector_selector = parse_vector_selector_with_modifiers(pairs.next().unwrap(), offset, at)?;
 
     if let Some(p) = pairs.next() {
         if p.as_rule() == Rule::duration {
@@ -416,7 +418,11 @@ fn parse_duration(pair: Pair<Rule>) -> Result<Duration, ParseError> {
     Ok(duration)
 }
 
-fn parse_vector_selector(
+fn parse_vector_selector(pair: Pair<Rule>) -> Result<Expr, ParseError> {
+    parse_vector_selector_with_modifiers(pair, OffsetModifier::None, AtModifier::None)
+}
+
+fn parse_vector_selector_with_modifiers(
     pair: Pair<Rule>,
     offset: OffsetModifier,
     at: AtModifier,

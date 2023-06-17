@@ -1,3 +1,4 @@
+use std::time::Duration;
 use std::vec;
 
 use crate::ast::*;
@@ -92,6 +93,15 @@ fn new_vector_selector(metric: &str) -> Expr {
         metric: metric.to_string(),
         label_matchers: vec![],
         offset: OffsetModifier::None,
+        at: AtModifier::None,
+    })
+}
+
+fn new_vector_selector_with_offset(metric: &str, offset: Duration) -> Expr {
+    Expr::VectorSelector(VectorSelector {
+        metric: metric.to_string(),
+        label_matchers: vec![],
+        offset: OffsetModifier::Duration(offset),
         at: AtModifier::None,
     })
 }
@@ -605,5 +615,15 @@ fn vector_binary_expr_with_modifiers() {
             VectorModifier::Ignoring(vec!["test".to_string(), "blub".to_string()]),
             GroupModifier::Right(vec!["bar".to_string(), "foo".to_string()]),
         ),
+    );
+}
+
+#[test]
+fn vector_selector() {
+    assert_parse("foo", &new_vector_selector("foo"));
+    assert_parse("min", &new_vector_selector("min"));
+    assert_parse(
+        "foo offset 5m",
+        &new_vector_selector_with_offset("foo", Duration::from_secs(300)),
     );
 }
