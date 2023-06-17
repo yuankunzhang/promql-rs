@@ -73,6 +73,12 @@ where
     }
 }
 
+impl From<String> for ParseError {
+    fn from(e: String) -> Self {
+        ParseError { message: e }
+    }
+}
+
 /// Parse a PromQL expression.
 pub fn parse(promql: &str) -> Result<Expr, ParseError> {
     let mut pairs = PromQLParser::parse(Rule::promql, promql)?;
@@ -110,13 +116,12 @@ fn parse_binary_expr(
     rhs: Result<Expr, ParseError>,
 ) -> Result<Expr, ParseError> {
     let mut pairs = op.into_inner();
-    let op = BinaryOp::from_str(pairs.next().unwrap().as_str()).unwrap();
-    let (return_bool, vector_modifier, group_modifier) =
-        parse_binary_modifiers(pairs.next()).unwrap();
+    let op = BinaryOp::from_str(pairs.next().unwrap().as_str())?;
+    let (return_bool, vector_modifier, group_modifier) = parse_binary_modifiers(pairs.next())?;
     Ok(Expr::BinaryExpr(BinaryExpr {
         op,
-        lhs: Box::new(lhs.unwrap()),
-        rhs: Box::new(rhs.unwrap()),
+        lhs: Box::new(lhs?),
+        rhs: Box::new(rhs?),
         return_bool,
         vector_modifier,
         group_modifier,
@@ -187,7 +192,7 @@ fn parse_unary_expr(op: Pair<Rule>, rhs: Result<Expr, ParseError>) -> Result<Exp
             _ => unreachable!(),
         },
         expr => Ok(Expr::UnaryExpr(UnaryExpr {
-            op: UnaryOp::from_str(op.as_str()).unwrap(),
+            op: UnaryOp::from_str(op.as_str())?,
             rhs: Box::new(expr),
         })),
     }
@@ -201,7 +206,7 @@ fn parse_paren_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
 
 fn parse_aggregate_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     let mut pairs = pair.into_inner();
-    let op = AggregateOp::from_str(pairs.next().unwrap().as_str()).unwrap();
+    let op = AggregateOp::from_str(pairs.next().unwrap().as_str())?;
 
     let mut modifier = match pairs.peek() {
         Some(p) if p.as_rule() == Rule::aggregate_modifier => {
@@ -450,7 +455,7 @@ fn parse_label_matchers(pair: Pair<Rule>) -> Result<Vec<LabelMatcher>, ParseErro
         .map(|p| {
             let mut pairs = p.into_inner();
             let name = pairs.next().unwrap().as_str().to_string();
-            let op = MatchOp::from_str(pairs.next().unwrap().as_str()).unwrap();
+            let op = MatchOp::from_str(pairs.next().unwrap().as_str())?;
             let value = pairs.next().unwrap().as_str().to_string();
             Ok(LabelMatcher { name, op, value })
         })
