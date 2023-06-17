@@ -148,12 +148,24 @@ fn string_literal() {
 
     assert_parse(
         r#"'single-quoted string \' with escaped quote'"#,
-        &new_string_literal(r#"single-quoted string ' with escaped quote"#),
+        &new_string_literal("single-quoted string ' with escaped quote"),
     );
 
     assert_parse(
         r#"`backtick-quoted string`"#,
-        &new_string_literal(r#"backtick-quoted string"#),
+        &new_string_literal("backtick-quoted string"),
+    );
+
+    assert_parse(
+        r#""\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺""#,
+        &new_string_literal(
+            "\u{7}\u{8}\u{c}\n\r\t\u{b}\\\" - \u{ff}\u{ff}\u{1234}\u{10111}\u{10111}11☺",
+        ),
+    );
+
+    assert_parse(
+        r#"`\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺`"#,
+        &new_string_literal(r#"\a\b\f\n\r\t\v\\\" - \xFF\377\u1234\U00010111\U0001011111☺"#),
     );
 }
 

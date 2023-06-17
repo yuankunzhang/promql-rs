@@ -312,7 +312,7 @@ backtick_quoted_string = @{ "`" ~ (!"`" ~ ANY)* ~ "`" }
 
 escape  = @{ "\\" ~ ("\\" | "\"" | "'" | "/" | "a" | "b" | "f" | "n" | "r" | "t" | "v" | unicode) }
 unicode = @{
-    ("n" ~ ASCII_DIGIT{2})
+    ('0'..'7'{3})
     | ("x" ~ ASCII_HEX_DIGIT{2})
     | ("u" ~ ASCII_HEX_DIGIT{4})
     | ("U" ~ ASCII_HEX_DIGIT{8})

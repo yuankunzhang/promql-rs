@@ -470,15 +470,20 @@ fn parse_string_literal(pair: Pair<Rule>) -> Result<Expr, ParseError> {
 
 /// Unescape the provided string.
 fn trim_and_unescape(s: &str) -> String {
+    let trimmed = trim(s);
     if s.starts_with(|c| c == '\'' || c == '"') {
-        unescape(trim(s))
+        unescape(trimmed)
     } else {
-        trim(s).to_string()
+        trimmed.to_string()
     }
 }
 
 fn trim(s: &str) -> &str {
-    s.trim_matches(&['"', '\'', '`'] as &[_])
+    if s.starts_with(|c| c == '"' || c == '\'' || c == '`') {
+        &s[1..s.len() - 1]
+    } else {
+        s
+    }
 }
 
 fn unescape(s: &str) -> String {
@@ -499,6 +504,19 @@ fn unescape(s: &str) -> String {
                 'r' => '\r',
                 't' => '\t',
                 'v' => char::from(0x0B),
+                'x' => u8::from_str_radix(&collect_chars(&mut chars, 2), 16).unwrap() as char,
+                'u' => {
+                    char::from_u32(u32::from_str_radix(&collect_chars(&mut chars, 4), 16).unwrap())
+                        .unwrap()
+                }
+                'U' => {
+                    char::from_u32(u32::from_str_radix(&collect_chars(&mut chars, 8), 16).unwrap())
+                        .unwrap()
+                }
+                d if d.is_digit(8) => char::from(
+                    (d as u8 - 0x30) * 64
+                        + u8::from_str_radix(&collect_chars(&mut chars, 2), 8).unwrap(),
+                ),
                 c => c,
             });
         } else {
@@ -507,6 +525,10 @@ fn unescape(s: &str) -> String {
     }
 
     string
+}
+
+fn collect_chars(chars: &mut std::iter::Peekable<std::str::Chars>, n: usize) -> String {
+    (0..n).filter_map(|_| chars.next()).collect()
 }
 
 fn parse_number_literal(pair: Pair<Rule>) -> Result<Expr, ParseError> {
