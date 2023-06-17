@@ -51,6 +51,8 @@ fn new_binary_expr(op: BinaryOp, lhs: Expr, rhs: Expr) -> Expr {
         lhs: Box::new(lhs),
         rhs: Box::new(rhs),
         return_bool: false,
+        vector_modifier: VectorModifier::None,
+        group_modifier: GroupModifier::None,
     })
 }
 
@@ -60,6 +62,8 @@ fn new_bool_binary_expr(op: BinaryOp, lhs: Expr, rhs: Expr) -> Expr {
         lhs: Box::new(lhs),
         rhs: Box::new(rhs),
         return_bool: true,
+        vector_modifier: VectorModifier::None,
+        group_modifier: GroupModifier::None,
     })
 }
 

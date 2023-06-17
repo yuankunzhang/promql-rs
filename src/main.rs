@@ -6,6 +6,6 @@ mod functions;
 mod parser;
 
 fn main() {
-    let tree = parser::parse("up{}[1h:]").unwrap_or_else(|e| panic!("{}", e));
+    let tree = parser::parse("foo + bar or bla and blub").unwrap_or_else(|e| panic!("{}", e));
     println!("{:#?}", tree);
 }

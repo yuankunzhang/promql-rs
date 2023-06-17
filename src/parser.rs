@@ -69,7 +69,6 @@ pub fn parse(promql: &str) -> Result<Expr, ParseError> {
 
 fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     let parse_primary = |primary: Pair<Rule>| match primary.as_rule() {
-        Rule::expr => parse_expr(primary),
         Rule::paren_expr => parse_paren_expr(primary),
         Rule::aggregate_expr => parse_aggregate_expr(primary),
         Rule::function_call => parse_function_call(primary),
@@ -83,10 +82,7 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
         }
         Rule::string_literal => parse_string_literal(primary),
         Rule::number_literal => parse_number_literal(primary),
-        _ => {
-            println!("parse_primary: {:#?}", primary);
-            unreachable!();
-        }
+        _ => unreachable!(),
     };
 
     let parse_prefix = |op: Pair<Rule>, rhs: Result<Expr, ParseError>| {
@@ -110,12 +106,18 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
         |lhs: Result<Expr, ParseError>, op: Pair<Rule>, rhs: Result<Expr, ParseError>| {
             let mut pairs = op.into_inner();
             let op = BinaryOp::from_str(pairs.next().unwrap().as_str()).unwrap();
-            let return_bool = pairs.peek().is_some() && pairs.next().unwrap().as_str() == "bool";
+            let (return_bool, vector_modifier, group_modifier) = if pairs.peek().is_none() {
+                (false, VectorModifier::None, GroupModifier::None)
+            } else {
+                parse_binary_modifiers(pairs.next().unwrap()).unwrap()
+            };
             Ok(Expr::BinaryExpr(BinaryExpr {
                 op,
                 lhs: Box::new(lhs.unwrap()),
                 rhs: Box::new(rhs.unwrap()),
                 return_bool,
+                vector_modifier,
+                group_modifier,
             }))
         };
 
@@ -124,6 +126,72 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
         .map_prefix(parse_prefix)
         .map_infix(parse_infix)
         .parse(pair.into_inner())
+}
+
+fn parse_binary_modifiers(
+    pair: Pair<Rule>,
+) -> Result<(bool, VectorModifier, GroupModifier), ParseError> {
+    let mut pairs = pair.into_inner();
+    let mut return_bool = false;
+    let mut vector_modifier = VectorModifier::None;
+    let mut group_modifier = GroupModifier::None;
+
+    if pairs.peek().is_none() {
+        return Ok((return_bool, vector_modifier, group_modifier));
+    }
+
+    return_bool = pairs.peek().unwrap().as_rule() == Rule::bool_modifier
+        && pairs.next().unwrap().as_str() == "bool";
+
+    if pairs.peek().is_none() {
+        return Ok((return_bool, vector_modifier, group_modifier));
+    }
+
+    let mut vector_modifier_pairs = pairs.next().unwrap().into_inner();
+    vector_modifier = match vector_modifier_pairs.next().unwrap().as_str() {
+        "on" => VectorModifier::On(
+            vector_modifier_pairs
+                .map(|s| s.as_str().to_string())
+                .collect(),
+        ),
+        "ignoring" => VectorModifier::Ignoring(
+            vector_modifier_pairs
+                .map(|s| s.as_str().to_string())
+                .collect(),
+        ),
+        _ => {
+            return Err(ParseError::new(format!(
+                "unknown vector modifier: {}",
+                vector_modifier_pairs.as_str()
+            )))
+        }
+    };
+
+    if pairs.peek().is_none() {
+        return Ok((return_bool, vector_modifier, group_modifier));
+    }
+
+    let mut group_modifier_pairs = pairs.next().unwrap().into_inner();
+    group_modifier = match group_modifier_pairs.next().unwrap().as_str() {
+        "group_left" => GroupModifier::Left(
+            group_modifier_pairs
+                .map(|s| s.as_str().to_string())
+                .collect(),
+        ),
+        "group_right" => GroupModifier::Right(
+            group_modifier_pairs
+                .map(|s| s.as_str().to_string())
+                .collect(),
+        ),
+        _ => {
+            return Err(ParseError::new(format!(
+                "unknown group modifier: {}",
+                group_modifier_pairs.as_str()
+            )))
+        }
+    };
+
+    Ok((return_bool, vector_modifier, group_modifier))
 }
 
 fn parse_paren_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {

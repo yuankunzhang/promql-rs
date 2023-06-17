@@ -75,11 +75,27 @@ impl FromStr for BinaryOp {
 }
 
 #[derive(Debug)]
+pub enum VectorModifier {
+    None,
+    On(Vec<String>),
+    Ignoring(Vec<String>),
+}
+
+#[derive(Debug)]
+pub enum GroupModifier {
+    None,
+    Left(Vec<String>),
+    Right(Vec<String>),
+}
+
+#[derive(Debug)]
 pub struct BinaryExpr {
     pub op: BinaryOp,
     pub lhs: Box<Expr>,
     pub rhs: Box<Expr>,
     pub return_bool: bool,
+    pub vector_modifier: VectorModifier,
+    pub group_modifier: GroupModifier,
 }
 
 #[derive(Debug, PartialEq)]

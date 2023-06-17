@@ -42,7 +42,13 @@ _or     = { "or" }
 _unless = { "unless" }
 _atan2  = { "atan2" }
 
-bin_modifier = { "bool" }
+bin_modifier = { (bool_modifier ~ group_modifiers?) | group_modifiers }
+bool_modifier = { "bool" }
+group_modifiers = _{ on_or_ignoring_modifier ~ left_or_right_modifier? }
+on_or_ignoring_modifier = { on_or_ignoring ~ grouping_labels }
+on_or_ignoring = { "on" | "ignoring" }
+left_or_right_modifier = { left_or_right ~ grouping_labels? }
+left_or_right = { "group_left" | "group_right" }
 
 primary = _{
     number_literal
