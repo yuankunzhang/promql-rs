@@ -2,6 +2,7 @@ use std::time::Duration;
 use std::vec;
 
 use crate::ast::*;
+use crate::functions::*;
 use crate::parser::parse;
 
 fn assert_parse_inner(a: &Expr, b: &Expr) {
@@ -17,6 +18,18 @@ fn assert_parse_inner(a: &Expr, b: &Expr) {
         }
         (Expr::ParenExpr(a), Expr::ParenExpr(b)) => {
             assert_parse_inner(&a.expr, &b.expr);
+        }
+        (Expr::FunctionCall(a), Expr::FunctionCall(b)) => {
+            assert_eq!(a.func.name, b.func.name);
+            assert_eq!(a.args.len(), b.args.len());
+            for (i, arg) in a.args.iter().enumerate() {
+                assert_parse_inner(arg, &b.args[i]);
+            }
+        }
+        (Expr::SubqueryExpr(a), Expr::SubqueryExpr(b)) => {
+            assert_parse_inner(&a.expr, &b.expr);
+            assert_eq!(a.range, b.range);
+            assert_eq!(a.step, b.step);
         }
         (Expr::VectorSelector(a), Expr::VectorSelector(b)) => {
             assert_eq!(a.metric, b.metric);
@@ -115,10 +128,39 @@ fn new_vector_selector_with_offset(metric: &str, offset: Duration) -> Expr {
     })
 }
 
+fn new_vector_selector_with_label_matchers(
+    metric: &str,
+    label_matchers: Vec<LabelMatcher>,
+) -> Expr {
+    Expr::VectorSelector(VectorSelector {
+        metric: metric.to_string(),
+        label_matchers,
+        offset: OffsetModifier::None,
+        at: AtModifier::None,
+    })
+}
+
 fn new_paren_expr(expr: Expr) -> Expr {
     Expr::ParenExpr(ParenExpr {
         expr: Box::new(expr),
     })
+}
+
+fn new_subquery_expr(expr: Expr, range: Duration, step: Duration) -> Expr {
+    Expr::SubqueryExpr(SubqueryExpr {
+        expr: Box::new(expr),
+        range,
+        step,
+    })
+}
+
+fn new_function_call(name: &str, args: Vec<Expr>) -> Expr {
+    let func = FUNCTIONS
+        .iter()
+        .find(|f| f.name == name)
+        .ok_or("unknown function name")
+        .unwrap();
+    Expr::FunctionCall(FunctionCall { func, args })
 }
 
 #[test]
@@ -664,5 +706,49 @@ fn vector_selector() {
     assert_parse(
         "foo offset 5m",
         &new_vector_selector_with_offset("foo", Duration::from_secs(300)),
+    );
+}
+
+#[test]
+fn subquery_expr() {
+    assert_parse(
+        "foo{bar=\"baz\"}[10m:6s]",
+        &new_subquery_expr(
+            new_vector_selector_with_label_matchers(
+                "foo",
+                vec![LabelMatcher {
+                    op: MatchOp::Equal,
+                    name: "bar".to_string(),
+                    value: "baz".to_string(),
+                }],
+            ),
+            Duration::from_secs(600),
+            Duration::from_secs(6),
+        ),
+    );
+
+    assert_parse(
+        "foo{bar=\"baz\"}[10m5s:1h6ms]",
+        &new_subquery_expr(
+            new_vector_selector_with_label_matchers(
+                "foo",
+                vec![LabelMatcher {
+                    op: MatchOp::Equal,
+                    name: "bar".to_string(),
+                    value: "baz".to_string(),
+                }],
+            ),
+            Duration::from_secs(605),
+            Duration::from_millis(3600006),
+        ),
+    );
+
+    assert_parse(
+        "foo[10m:]",
+        &new_subquery_expr(
+            new_vector_selector("foo"),
+            Duration::from_secs(600),
+            Duration::default(),
+        ),
     );
 }

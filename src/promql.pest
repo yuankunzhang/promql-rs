@@ -290,21 +290,51 @@ number_literal = { number }
 ///     1h30m
 ///     5m
 ///     10s
-duration = @{
-    (int ~ "y")?
-    ~ (int ~ "w")?
-    ~ (int ~ "d")?
-    ~ (int ~ "h")?
-    ~ (int ~ "m")?
-    ~ (int ~ "s")?
-    ~ (int ~ "ms")?
-}
 
-//string  = @{
-//    "\"" ~ ((!("\"" | "\\") ~ ANY) | escape)* ~ "\""
-//    | "'" ~ ((!"'" ~ ANY) | escape)* ~ "'"
-//    | "`" ~ (!"`" ~ ANY)* ~ "`"
-//}
+duration = @{
+    duration_millisecond
+    | duration_second
+    | duration_minute
+    | duration_hour
+    | duration_day
+    | duration_week
+    | duration_year
+}
+duration_year = @{ int ~ "y" ~ (
+    duration_millisecond
+    | duration_second
+    | duration_minute
+    | duration_hour
+    | duration_day
+    | duration_week
+)? }
+duration_week = @{ int ~ "w" ~ (
+    duration_millisecond
+    | duration_second
+    | duration_minute
+    | duration_hour
+    | duration_day
+)? }
+duration_day = @{ int ~ "d" ~ (
+    duration_millisecond
+    | duration_second
+    | duration_minute
+    | duration_hour
+)? }
+duration_hour = @{ int ~ "h" ~ (
+    duration_millisecond
+    | duration_second
+    | duration_minute
+)? }
+duration_minute = @{ int ~ "m" ~ (
+    duration_millisecond
+    | duration_second
+)? }
+duration_second = @{ int ~ "s" ~ (
+    duration_millisecond
+)? }
+duration_millisecond = @{ int ~ "ms" }
+
 string                 = @{ double_quoted_string | single_quoted_string | backtick_quoted_string }
 double_quoted_string   = @{ "\"" ~ ((!("\"" | "\\") ~ ANY) | escape)* ~ "\"" }
 single_quoted_string   = @{ "'" ~ ((!("'" | "\\") ~ ANY) | escape)* ~ "'" }
