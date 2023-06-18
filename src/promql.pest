@@ -6,10 +6,11 @@ prefix   = _{ neg | pos }
 neg      = { "-" }
 pos      = { "+" }
 
-postfix  = _{ matrix | subquery | offset }
+postfix  = _{ matrix | subquery | offset | at }
 matrix   = { "[" ~ duration ~ "]" }
 subquery = { "[" ~ duration ~ ":" ~ duration? ~ "]" }
 offset   = { "offset" ~ duration }
+at       = { "@" ~ (at_timestamp | at_preprocessors) }
 
 infix    = _{ add | sub | mul | div | mod | pow | eq | ne | le | lt | ge | gt | and | or | unless | atan2 }
 
@@ -177,6 +178,9 @@ match_op           = { "!=" | "=~" | "!~" | "=" }
 grouping_labels       = _{ "(" ~ grouping_label_list? ~ ")" }
 grouping_label_list   = _{ grouping_label_item ~ ("," ~ grouping_label_item)* }
 grouping_label_item   = _{ identifier }
+
+at_timestamp     = { number }
+at_preprocessors = { "start()" | "end()" }
 
 duration = {
     duration_millisecond

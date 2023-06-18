@@ -184,12 +184,12 @@ pub struct MatrixSelector {
     pub range: Duration,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum AtModifier {
     None,
     Start,
     End,
-    Time(u64),
+    Timestamp(u64),
 }
 
 /// SubqueryExpr represents a subquery expression.

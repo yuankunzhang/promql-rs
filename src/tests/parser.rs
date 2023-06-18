@@ -90,6 +90,15 @@ macro_rules! vector_selector {
             at: AtModifier::None,
         })
     };
+    ($metric:expr, $offset:expr, $at:expr) => {
+        Expr::VectorSelector(VectorSelector {
+            metric: $metric.to_string(),
+            label_matchers: vec![],
+            original_offset: Duration::default(),
+            offset: Duration::from_secs($offset),
+            at: $at,
+        })
+    };
     ($metric:expr) => {
         Expr::VectorSelector(VectorSelector {
             metric: $metric.to_string(),
@@ -132,6 +141,8 @@ fn assert_parse_inner(a: Expr, b: Expr) {
         (Expr::SubqueryExpr(a), Expr::SubqueryExpr(b)) => {
             assert_eq!(a.range, b.range);
             assert_eq!(a.step, b.step);
+            assert_eq!(a.offset, b.offset);
+            assert_eq!(a.at, b.at);
             assert_parse_inner(*a.expr, *b.expr);
         }
         (Expr::UnaryExpr(a), Expr::UnaryExpr(b)) => {
@@ -141,6 +152,7 @@ fn assert_parse_inner(a: Expr, b: Expr) {
         (Expr::VectorSelector(a), Expr::VectorSelector(b)) => {
             assert_eq!(a.metric, b.metric);
             assert_eq!(a.offset, b.offset);
+            assert_eq!(a.at, b.at);
             assert_eq!(a.label_matchers.len(), b.label_matchers.len());
         }
         _ => panic!("Expressions do not match"),
@@ -167,6 +179,24 @@ fn parse_aggregate_exprs() {
             string_literal!(""),
             vector_selector!("http_requests_total")
         ),
+    );
+}
+
+#[test]
+fn parse_at_exprs() {
+    assert_parse(
+        "http_requests_total @ 1234567890",
+        vector_selector!("http_requests_total", 0, AtModifier::Timestamp(1234567890)),
+    );
+
+    assert_parse(
+        "http_requests_total @ start()",
+        vector_selector!("http_requests_total", 0, AtModifier::Start),
+    );
+
+    assert_parse(
+        "http_requests_total @ end()",
+        vector_selector!("http_requests_total", 0, AtModifier::End),
     );
 }
 

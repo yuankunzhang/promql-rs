@@ -43,7 +43,7 @@ lazy_static::lazy_static! {
                 | Op::infix(div, Left)
                 | Op::infix(r#mod, Left)
                 | Op::infix(atan2, Left))
-            .op(Op::postfix(offset))
+            .op(Op::postfix(offset) | Op::postfix(at))
             .op(Op::postfix(matrix) | Op::postfix(subquery))
             .op(Op::prefix(neg) | Op::prefix(pos))
             .op(Op::infix(pow, Right))
@@ -146,7 +146,6 @@ fn parse_postfix(lhs: Result<Expr, ParseError>, op: Pair<Rule>) -> Result<Expr, 
         }
         Rule::offset => {
             let offset = parse_duration(op.into_inner().next().unwrap())?;
-            println!("offset: {:#?}", offset);
             match expr {
                 Expr::VectorSelector(ref mut vs) => {
                     vs.offset = offset;
@@ -161,6 +160,25 @@ fn parse_postfix(lhs: Result<Expr, ParseError>, op: Pair<Rule>) -> Result<Expr, 
                     sq.offset = offset;
                 }
                 _ => return Err("offset modifier must be preceded by an instant vector selector, a range vector selector, or a subquery".into()),
+            }
+            Ok(expr)
+        }
+        Rule::at => {
+            let at_modifier = parse_at_modifier(op.into_inner().next().unwrap())?;
+            match expr {
+                Expr::VectorSelector(ref mut vs) => {
+                    vs.at = at_modifier;
+                }
+                Expr::MatrixSelector(ref mut ms) => match ms.vector_selector.as_mut() {
+                    Expr::VectorSelector(ref mut vs) => {
+                        vs.at = at_modifier;
+                    }
+                    _ => return Err("invalid matrix selector".into()),
+                },
+                Expr::SubqueryExpr(ref mut sq) => {
+                    sq.at = at_modifier;
+                }
+                _ => return Err("@ modifier must be preceded by an instant vector selector, a range vector selector, or a subquery".into()),
             }
             Ok(expr)
         }
@@ -192,6 +210,15 @@ fn parse_infix(
         lhs, op, rhs
     );
     unreachable!();
+}
+
+fn parse_at_modifier(pair: Pair<Rule>) -> Result<AtModifier, ParseError> {
+    let value = pair.as_str();
+    match value {
+        "start()" => Ok(AtModifier::Start),
+        "end()" => Ok(AtModifier::End),
+        _ => Ok(AtModifier::Timestamp(value.parse::<u64>().unwrap())),
+    }
 }
 
 fn parse_duration(pair: Pair<Rule>) -> Result<Duration, ParseError> {
