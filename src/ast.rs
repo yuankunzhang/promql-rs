@@ -6,7 +6,7 @@ use crate::function::*;
 pub enum Expr {
     AggregateExpr(AggregateExpr),
     BinaryExpr(BinaryExpr),
-    Call(Call),
+    FunctionCall(FunctionCall),
     MatrixSelector(MatrixSelector),
     SubqueryExpr(SubqueryExpr),
     NumberLiteral(NumberLiteral),
@@ -20,7 +20,7 @@ impl Expr {
     pub fn get_type(&self) -> ValueType {
         match self {
             Expr::AggregateExpr(_) => ValueType::Vector,
-            Expr::Call(call) => call.func.return_type,
+            Expr::FunctionCall(call) => call.func.return_type,
             Expr::MatrixSelector(_) => ValueType::Matrix,
             Expr::SubqueryExpr(_) => ValueType::Matrix,
             Expr::NumberLiteral(_) => ValueType::Scalar,
@@ -170,9 +170,9 @@ pub struct BinaryExpr {
     pub vector_matching: VectorMatching,
 }
 
-/// Call represents a function call.
+/// FunctionCall represents a function call.
 #[derive(Debug)]
-pub struct Call {
+pub struct FunctionCall {
     pub func: &'static Function,
     pub args: Vec<Expr>,
 }

@@ -1,10 +1,12 @@
 use crate::ast::*;
+use crate::function::FUNCTIONS;
 use pest::iterators::Pair;
 use pest::pratt_parser::{Assoc::*, Op, PrattParser};
 use pest::Parser;
 use pest_derive::Parser;
 use std::fmt::Display;
 use std::str::FromStr;
+use std::time::Duration;
 
 #[derive(Parser)]
 #[grammar = "promql.pest"]
@@ -87,9 +89,11 @@ pub fn parse(promql: &str) -> Result<Expr, ParseError> {
 
 fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     let parse_primary = |primary: Pair<Rule>| match primary.as_rule() {
+        Rule::function_call => parse_function_call(primary),
         Rule::number_literal => parse_number_literal(primary),
         Rule::paren_expr => parse_paren_expr(primary),
         Rule::string_literal => parse_string_literal(primary),
+        Rule::vector_selector => parse_vector_selector(primary),
         _ => unreachable!(),
     };
 
@@ -99,6 +103,21 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
         .map_primary(parse_primary)
         .map_prefix(parse_prefix)
         .parse(pair.into_inner())
+}
+
+fn parse_function_call(pair: Pair<Rule>) -> Result<Expr, ParseError> {
+    println!("parse_function_call: {:#?}", pair);
+    let mut pairs = pair.into_inner();
+    let name = pairs.next().unwrap().as_str();
+    let func = FUNCTIONS
+        .iter()
+        .find(|f| f.name == name)
+        .ok_or("unknown function name")
+        .unwrap();
+
+    let args = parse_function_args(pairs.next().unwrap())?;
+    // TODO: args validation
+    Ok(Expr::FunctionCall(FunctionCall { func, args }))
 }
 
 fn parse_number_literal(pair: Pair<Rule>) -> Result<Expr, ParseError> {
@@ -142,6 +161,41 @@ fn parse_unary_expr(op: Pair<Rule>, rhs: Result<Expr, ParseError>) -> Result<Exp
             rhs: Box::new(expr),
         })),
     }
+}
+
+fn parse_vector_selector(pair: Pair<Rule>) -> Result<Expr, ParseError> {
+    let mut pairs = pair.into_inner();
+
+    let metric = match pairs.peek().unwrap().as_rule() {
+        Rule::metric => pairs.next().unwrap().as_str().to_string(),
+        _ => String::new(),
+    };
+
+    let label_matchers = match pairs.next() {
+        Some(pair) => pair
+            .into_inner()
+            .map(|pair| {
+                let mut pairs = pair.into_inner();
+                let name = pairs.next().unwrap().as_str().to_string();
+                let op = MatchOp::from_str(pairs.next().unwrap().as_str()).unwrap();
+                let value = pairs.next().unwrap().as_str().to_string();
+                LabelMatcher { op, name, value }
+            })
+            .collect(),
+        None => vec![],
+    };
+
+    Ok(Expr::VectorSelector(VectorSelector {
+        metric,
+        label_matchers,
+        original_offset: Duration::default(),
+        offset: Duration::default(),
+        at: AtModifier::None,
+    }))
+}
+
+fn parse_function_args(pair: Pair<Rule>) -> Result<Vec<Expr>, ParseError> {
+    pair.into_inner().map(|expr| parse_expr(expr)).collect()
 }
 
 fn unescape(s: &str) -> String {

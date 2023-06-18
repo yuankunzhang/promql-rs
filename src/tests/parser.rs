@@ -1,10 +1,29 @@
 use crate::ast::*;
+use crate::function::FUNCTIONS;
 use crate::parser::*;
 use std::str::FromStr;
+use std::time::Duration;
+
+macro_rules! function_call {
+    ($name:expr $(, $arg:expr)*) => {
+        Expr::FunctionCall(FunctionCall {
+            func: FUNCTIONS.iter().find(|f| f.name == $name).unwrap(),
+            args: vec![$($arg),*],
+        })
+    };
+}
 
 macro_rules! number_literal {
     ($value:expr) => {
         Expr::NumberLiteral(NumberLiteral { value: $value })
+    };
+}
+
+macro_rules! paren_expr {
+    ($expr:expr) => {
+        Expr::ParenExpr(ParenExpr {
+            expr: Box::new($expr),
+        })
     };
 }
 
@@ -25,10 +44,18 @@ macro_rules! unary_expr {
     };
 }
 
-macro_rules! paren_expr {
-    ($expr:expr) => {
-        Expr::ParenExpr(ParenExpr {
-            expr: Box::new($expr),
+macro_rules! vector_selector {
+    ($metric:expr $(, $op:expr, $name:expr, $value:expr)*) => {
+        Expr::VectorSelector(VectorSelector {
+            metric: $metric.to_string(),
+            label_matchers: vec![$(LabelMatcher {
+                op: MatchOp::from_str($op).unwrap(),
+                name: $name.to_string(),
+                value: $value.to_string(),
+            }),*],
+            original_offset: Duration::default(),
+            offset: Duration::default(),
+            at: AtModifier::None,
         })
     };
 }
@@ -39,6 +66,10 @@ fn assert_parse(s: &str, e: Expr) {
 
 fn assert_parse_inner(a: Expr, b: Expr) {
     match (a, b) {
+        (Expr::FunctionCall(a), Expr::FunctionCall(b)) => {
+            assert_eq!(a.func.name, b.func.name);
+            assert_eq!(a.args.len(), b.args.len());
+        }
         (Expr::NumberLiteral(a), Expr::NumberLiteral(b)) => {
             assert_eq!(a.value, b.value);
         }
@@ -52,8 +83,24 @@ fn assert_parse_inner(a: Expr, b: Expr) {
             assert_eq!(a.op, b.op);
             assert_parse_inner(*a.rhs, *b.rhs);
         }
+        (Expr::VectorSelector(a), Expr::VectorSelector(b)) => {
+            assert_eq!(a.metric, b.metric);
+            assert_eq!(a.label_matchers.len(), b.label_matchers.len());
+        }
         _ => panic!("Expressions do not match"),
     }
+}
+
+#[test]
+fn parse_function_call() {
+    assert_parse("abs(-1)", function_call!("abs", number_literal!(1.0)));
+    assert_parse(
+        r#"absent(nonexistent{job="myjob"})"#,
+        function_call!(
+            "absent",
+            vector_selector!("nonexistent", "=", "job", "myjob")
+        ),
+    );
 }
 
 #[test]
@@ -97,5 +144,21 @@ fn parse_unary_exprs() {
     assert_parse(
         "--(1)",
         unary_expr!("-", unary_expr!("-", paren_expr!(number_literal!(1.0)))),
+    );
+}
+
+#[test]
+fn parse_vector_selector() {
+    assert_parse("up", vector_selector!("up"));
+    assert_parse("abs", vector_selector!("abs"));
+    assert_parse("up{}", vector_selector!("up"));
+    assert_parse("{}", vector_selector!(""));
+    assert_parse(
+        r#"up{foo!="bar", baz=~"qux"}"#,
+        vector_selector!("up", "!=", "foo", "bar", "=~", "baz", "qux"),
+    );
+    assert_parse(
+        r#"{foo="bar", baz!~"qux"}"#,
+        vector_selector!("", "=", "foo", "bar", "!~", "baz", "qux"),
     );
 }

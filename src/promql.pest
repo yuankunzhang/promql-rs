@@ -55,9 +55,11 @@ left_or_right_modifier  = { left_or_right ~ grouping_labels? }
 left_or_right           = { "group_left" | "group_right" }
 
 primary = _{
-    number_literal
+    function_call
+    | number_literal
     | paren_expr
     | string_literal
+    | vector_selector
 }
 
 //aggregate_expr = { aggregate_op ~ aggregate_body }
@@ -70,9 +72,83 @@ primary = _{
 //aggregate_modifier    = { aggregate_modifier_op ~ grouping_labels }
 //aggregate_modifier_op = { "by" | "without" }
 
-grouping_labels       = _{ "(" ~ grouping_label_list? ~ ")" }
-grouping_label_list   = _{ grouping_label_item ~ ("," ~ grouping_label_item)* }
-grouping_label_item   = _{ identifier }
+function_call      = { function_call_name ~ function_call_body }
+function_call_body = _{ "(" ~ function_call_args? ~ ")" }
+function_call_args = { expr ~ ("," ~ expr)* }
+function_call_name = {
+    "absent_over_time"
+    | "absent"
+    | "abs"
+    | "ceil"
+    | "changes"
+    | "clamp_max"
+    | "clamp_min"
+    | "clamp"
+    | "day_of_month"
+    | "day_of_week"
+    | "day_of_year"
+    | "days_in_month"
+    | "delta"
+    | "deriv"
+    | "exp"
+    | "floor"
+    | "histogram_count"
+    | "histogram_sum"
+    | "histogram_fraction"
+    | "histogram_quantile"
+    | "holt_winters"
+    | "hour"
+    | "idelta"
+    | "increase"
+    | "irate"
+    | "label_join"
+    | "label_replace"
+    | "ln"
+    | "log2"
+    | "log10"
+    | "minute"
+    | "month"
+    | "predict_linear"
+    | "rate"
+    | "resets"
+    | "round"
+    | "scalar"
+    | "sgn"
+    | "sort_desc"
+    | "sort"
+    | "sqrt"
+    | "timestamp"
+    | "time"
+    | "vector"
+    | "year"
+    // aggregation functions
+    | "avg_over_time"
+    | "count_over_time"
+    | "max_over_time"
+    | "min_over_time"
+    | "quantile_over_time"
+    | "stddev_over_time"
+    | "stdvar_over_time"
+    | "sum_over_time"
+    | "last_over_time"
+    | "present_over_time"
+    // trigonometric functions
+    | "acosh"
+    | "acos"
+    | "asinh"
+    | "asin"
+    | "atanh"
+    | "atan"
+    | "cosh"
+    | "cos"
+    | "sinh"
+    | "sin"
+    | "tanh"
+    | "tan"
+    | "deg"
+    | "pi"
+    | "rad"
+}
 
 paren_expr = { "(" ~ expr ~ ")" }
 
@@ -82,6 +158,10 @@ label_matchers     = { "{" ~ label_matcher_list? ~ "}" }
 label_matcher_list = _{ label_matcher_item ~ ("," ~ label_matcher_item)* }
 label_matcher_item = { identifier ~ match_op ~ string }
 match_op           = { "!=" | "=~" | "!~" | "=" }
+
+grouping_labels       = _{ "(" ~ grouping_label_list? ~ ")" }
+grouping_label_list   = _{ grouping_label_item ~ ("," ~ grouping_label_item)* }
+grouping_label_item   = _{ identifier }
 
 duration = {
     duration_millisecond
