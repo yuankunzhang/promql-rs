@@ -55,22 +55,36 @@ left_or_right_modifier  = { left_or_right ~ grouping_labels? }
 left_or_right           = { "group_left" | "group_right" }
 
 primary = _{
-    function_call
+    aggregate_expr
+    | function_call
     | number_literal
     | paren_expr
     | string_literal
     | vector_selector
 }
 
-//aggregate_expr = { aggregate_op ~ aggregate_body }
-//aggregate_op   = { "avg" | "bottomk" | "count" | "count_values" | "group" | "max" | "min" | "quantile" | "stddev" | "stdvar" | "sum" | "topk" }
-//aggregate_body = {
-//    (aggregate_modifier ~ function_call_body)
-//    | (function_call_body ~ aggregate_modifier?)
-//}
-//
-//aggregate_modifier    = { aggregate_modifier_op ~ grouping_labels }
-//aggregate_modifier_op = { "by" | "without" }
+aggregate_expr = { aggregate_op ~ aggregate_body }
+aggregate_op   = {
+    "avg"
+    | "bottomk"
+    | "count_values"
+    | "count"
+    | "group"
+    | "max"
+    | "min"
+    | "quantile"
+    | "stddev"
+    | "stdvar"
+    | "sum"
+    | "topk"
+}
+aggregate_body = _{
+    (aggregate_modifier ~ function_call_body)
+    | (function_call_body ~ aggregate_modifier?)
+}
+
+aggregate_modifier    = { aggregate_modifier_op ~ grouping_labels }
+aggregate_modifier_op = { "by" | "without" }
 
 function_call      = { function_call_name ~ function_call_body }
 function_call_body = _{ "(" ~ function_call_args? ~ ")" }

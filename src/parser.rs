@@ -89,6 +89,7 @@ pub fn parse(promql: &str) -> Result<Expr, ParseError> {
 
 fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     let parse_primary = |primary: Pair<Rule>| match primary.as_rule() {
+        Rule::aggregate_expr => parse_aggregate_expr(primary),
         Rule::function_call => parse_function_call(primary),
         Rule::number_literal => parse_number_literal(primary),
         Rule::paren_expr => parse_paren_expr(primary),
@@ -103,6 +104,43 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
         .map_primary(parse_primary)
         .map_prefix(parse_prefix)
         .parse(pair.into_inner())
+}
+
+fn parse_aggregate_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
+    let mut pairs = pair.into_inner();
+    let op = AggregateOp::from_str(pairs.next().unwrap().as_str())?;
+
+    let mut modifier = match pairs.peek() {
+        Some(pair) if pair.as_rule() == Rule::aggregate_modifier => {
+            parse_aggregate_modifier(pairs.next().unwrap())?
+        }
+        _ => AggregateModifier::None,
+    };
+
+    let mut args = parse_function_args(pairs.next().unwrap())?;
+    let expr = args.pop().ok_or("missing expression".to_string())?;
+
+    if let Some(pair) = pairs.next() {
+        modifier = parse_aggregate_modifier(pair)?;
+    }
+
+    Ok(Expr::AggregateExpr(AggregateExpr {
+        op,
+        expr: Box::new(expr),
+        param: args.pop().map(Box::new),
+        modifier,
+    }))
+}
+
+fn parse_aggregate_modifier(pair: Pair<Rule>) -> Result<AggregateModifier, ParseError> {
+    let mut pairs = pair.into_inner();
+    let modifier = pairs.next().unwrap();
+    let labels: Vec<_> = pairs.map(|s| s.as_str().to_string()).collect();
+    match modifier.as_str() {
+        "by" => Ok(AggregateModifier::By(labels)),
+        "without" => Ok(AggregateModifier::Without(labels)),
+        _ => unreachable!(),
+    }
 }
 
 fn parse_function_call(pair: Pair<Rule>) -> Result<Expr, ParseError> {

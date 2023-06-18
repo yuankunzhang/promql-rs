@@ -4,6 +4,17 @@ use crate::parser::*;
 use std::str::FromStr;
 use std::time::Duration;
 
+macro_rules! aggregate_expr {
+    ($op:expr, $modifier:expr, $param:expr, $expr:expr) => {
+        Expr::AggregateExpr(AggregateExpr {
+            op: AggregateOp::from_str($op).unwrap(),
+            expr: Box::new($expr),
+            param: Option::from(Box::new($param)),
+            modifier: $modifier,
+        })
+    };
+}
+
 macro_rules! function_call {
     ($name:expr $(, $arg:expr)*) => {
         Expr::FunctionCall(FunctionCall {
@@ -66,6 +77,11 @@ fn assert_parse(s: &str, e: Expr) {
 
 fn assert_parse_inner(a: Expr, b: Expr) {
     match (a, b) {
+        (Expr::AggregateExpr(a), Expr::AggregateExpr(b)) => {
+            assert_eq!(a.op, b.op);
+            assert_eq!(a.modifier, b.modifier);
+            assert_parse_inner(*a.expr, *b.expr);
+        }
         (Expr::FunctionCall(a), Expr::FunctionCall(b)) => {
             assert_eq!(a.func.name, b.func.name);
             assert_eq!(a.args.len(), b.args.len());
@@ -92,7 +108,30 @@ fn assert_parse_inner(a: Expr, b: Expr) {
 }
 
 #[test]
-fn parse_function_call() {
+fn parse_aggregate_exprs() {
+    assert_parse(
+        "sum without(host) (http_requests_total)",
+        aggregate_expr!(
+            "sum",
+            AggregateModifier::Without(vec!["host".to_string()]),
+            string_literal!(""),
+            vector_selector!("http_requests_total")
+        ),
+    );
+
+    assert_parse(
+        "count by(application, group) (http_requests_total)",
+        aggregate_expr!(
+            "count",
+            AggregateModifier::By(vec!["application".to_string(), "group".to_string()]),
+            string_literal!(""),
+            vector_selector!("http_requests_total")
+        ),
+    );
+}
+
+#[test]
+fn parse_function_calls() {
     assert_parse("abs(-1)", function_call!("abs", number_literal!(1.0)));
     assert_parse(
         r#"absent(nonexistent{job="myjob"})"#,

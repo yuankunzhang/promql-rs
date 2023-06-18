@@ -39,7 +39,7 @@ impl Expr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum AggregateOp {
     Avg,
     Bottomk,
@@ -77,7 +77,7 @@ impl FromStr for AggregateOp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum AggregateModifier {
     None,
     By(Vec<String>),
