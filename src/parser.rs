@@ -98,12 +98,97 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
         _ => unreachable!(),
     };
 
-    let parse_prefix = |op, rhs| parse_unary_expr(op, rhs);
+    let parse_postfix = |lhs: Result<Expr, ParseError>, op: Pair<Rule>| parse_postfix(lhs, op);
+
+    let parse_prefix = |op, rhs| parse_prefix(op, rhs);
 
     PRATT_PARSER
         .map_primary(parse_primary)
+        .map_postfix(parse_postfix)
         .map_prefix(parse_prefix)
         .parse(pair.into_inner())
+}
+
+fn parse_postfix(lhs: Result<Expr, ParseError>, op: Pair<Rule>) -> Result<Expr, ParseError> {
+    match op.as_rule() {
+        Rule::matrix => {
+            let mut pairs = op.into_inner();
+            let range = parse_duration(pairs.next().unwrap())?;
+            Ok(Expr::MatrixSelector(MatrixSelector {
+                vector_selector: Box::new(lhs?),
+                range,
+            }))
+        }
+        Rule::subquery => {
+            let mut pairs = op.into_inner();
+            let range = parse_duration(pairs.next().unwrap())?;
+            let step = parse_duration(pairs.next().unwrap())?;
+            Ok(Expr::SubqueryExpr(SubqueryExpr {
+                expr: Box::new(lhs?),
+                at: AtModifier::None,
+                range,
+                step,
+            }))
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn parse_prefix(op: Pair<Rule>, rhs: Result<Expr, ParseError>) -> Result<Expr, ParseError> {
+    match rhs? {
+        Expr::NumberLiteral(n) => match op.as_str() {
+            "+" => return Ok(Expr::NumberLiteral(NumberLiteral { value: n.value })),
+            "-" => return Ok(Expr::NumberLiteral(NumberLiteral { value: -n.value })),
+            _ => unreachable!(),
+        },
+        expr => Ok(Expr::UnaryExpr(UnaryExpr {
+            op: UnaryOp::from_str(op.as_str())?,
+            rhs: Box::new(expr),
+        })),
+    }
+}
+
+fn parse_duration(pair: Pair<Rule>) -> Result<Duration, ParseError> {
+    let mut duration = Duration::default();
+    let mut num = String::new();
+    let mut unit = String::new();
+
+    let add_duration = |duration: &mut Duration,
+                        num: &mut String,
+                        unit: &mut String|
+     -> Result<(), Box<dyn std::error::Error>> {
+        let value = num.parse::<u64>().unwrap();
+        match unit.as_str() {
+            "y" => *duration += Duration::from_secs(value * 365 * 24 * 60 * 60),
+            "w" => *duration += Duration::from_secs(value * 7 * 24 * 60 * 60),
+            "d" => *duration += Duration::from_secs(value * 24 * 60 * 60),
+            "h" => *duration += Duration::from_secs(value * 60 * 60),
+            "m" => *duration += Duration::from_secs(value * 60),
+            "s" => *duration += Duration::from_secs(value),
+            "ms" => *duration += Duration::from_millis(value),
+            _ => return Err("unknown duration unit".into()),
+        }
+        unit.clear();
+        num.clear();
+        Ok(())
+    };
+
+    for c in pair.as_str().chars() {
+        if c.is_digit(10) {
+            if !unit.is_empty() {
+                add_duration(&mut duration, &mut num, &mut unit).unwrap();
+            }
+            num.push(c);
+        } else {
+            unit.push(c);
+        }
+    }
+
+    if !unit.is_empty() {
+        add_duration(&mut duration, &mut num, &mut unit).unwrap();
+    }
+
+    Ok(duration)
 }
 
 fn parse_aggregate_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
@@ -158,6 +243,10 @@ fn parse_function_call(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     Ok(Expr::FunctionCall(FunctionCall { func, args }))
 }
 
+fn parse_function_args(pair: Pair<Rule>) -> Result<Vec<Expr>, ParseError> {
+    pair.into_inner().map(|expr| parse_expr(expr)).collect()
+}
+
 fn parse_number_literal(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     let s = pair.into_inner().next().unwrap().as_str();
     match s {
@@ -185,20 +274,6 @@ fn parse_string_literal(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     Ok(Expr::StringLiteral(StringLiteral {
         value: unescape(pair.into_inner().next().unwrap().as_str()),
     }))
-}
-
-fn parse_unary_expr(op: Pair<Rule>, rhs: Result<Expr, ParseError>) -> Result<Expr, ParseError> {
-    match rhs.unwrap() {
-        Expr::NumberLiteral(n) => match op.as_str() {
-            "+" => return Ok(Expr::NumberLiteral(NumberLiteral { value: n.value })),
-            "-" => return Ok(Expr::NumberLiteral(NumberLiteral { value: -n.value })),
-            _ => unreachable!(),
-        },
-        expr => Ok(Expr::UnaryExpr(UnaryExpr {
-            op: UnaryOp::from_str(op.as_str())?,
-            rhs: Box::new(expr),
-        })),
-    }
 }
 
 fn parse_vector_selector(pair: Pair<Rule>) -> Result<Expr, ParseError> {
@@ -230,10 +305,6 @@ fn parse_vector_selector(pair: Pair<Rule>) -> Result<Expr, ParseError> {
         offset: Duration::default(),
         at: AtModifier::None,
     }))
-}
-
-fn parse_function_args(pair: Pair<Rule>) -> Result<Vec<Expr>, ParseError> {
-    pair.into_inner().map(|expr| parse_expr(expr)).collect()
 }
 
 fn unescape(s: &str) -> String {

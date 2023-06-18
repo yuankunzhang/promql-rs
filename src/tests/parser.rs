@@ -24,6 +24,15 @@ macro_rules! function_call {
     };
 }
 
+macro_rules! matrix_selector {
+    ($vector_selector:expr, $range:expr) => {
+        Expr::MatrixSelector(MatrixSelector {
+            vector_selector: Box::new($vector_selector),
+            range: Duration::from_secs($range),
+        })
+    };
+}
+
 macro_rules! number_literal {
     ($value:expr) => {
         Expr::NumberLiteral(NumberLiteral { value: $value })
@@ -86,6 +95,10 @@ fn assert_parse_inner(a: Expr, b: Expr) {
             assert_eq!(a.func.name, b.func.name);
             assert_eq!(a.args.len(), b.args.len());
         }
+        (Expr::MatrixSelector(a), Expr::MatrixSelector(b)) => {
+            assert_eq!(a.range, b.range);
+            assert_parse_inner(*a.vector_selector, *b.vector_selector);
+        }
         (Expr::NumberLiteral(a), Expr::NumberLiteral(b)) => {
             assert_eq!(a.value, b.value);
         }
@@ -143,6 +156,18 @@ fn parse_function_calls() {
 }
 
 #[test]
+fn parse_matrix_selectors() {
+    assert_parse("up{}[5m]", matrix_selector!(vector_selector!("up"), 300));
+    assert_parse(
+        r#"http_requests_total{foo="bar"}[5m6s]"#,
+        matrix_selector!(
+            vector_selector!("http_requests_total", "=", "foo", "bar"),
+            306
+        ),
+    );
+}
+
+#[test]
 fn parse_number_literals() {
     assert_parse("0", number_literal!(0.0));
     assert_parse("1", number_literal!(1.0));
@@ -187,7 +212,7 @@ fn parse_unary_exprs() {
 }
 
 #[test]
-fn parse_vector_selector() {
+fn parse_vector_selectors() {
     assert_parse("up", vector_selector!("up"));
     assert_parse("abs", vector_selector!("abs"));
     assert_parse("up{}", vector_selector!("up"));
