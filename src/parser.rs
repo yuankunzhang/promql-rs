@@ -88,6 +88,7 @@ pub fn parse(promql: &str) -> Result<Expr, ParseError> {
 fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     let parse_primary = |primary: Pair<Rule>| match primary.as_rule() {
         Rule::number_literal => parse_number_literal(primary),
+        Rule::paren_expr => parse_paren_expr(primary),
         Rule::string_literal => parse_string_literal(primary),
         _ => unreachable!(),
     };
@@ -115,6 +116,12 @@ fn parse_number_literal(pair: Pair<Rule>) -> Result<Expr, ParseError> {
             value: s.parse::<f64>().unwrap(),
         })),
     }
+}
+
+fn parse_paren_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
+    Ok(Expr::ParenExpr(ParenExpr {
+        expr: Box::new(parse_expr(pair.into_inner().next().unwrap())?),
+    }))
 }
 
 fn parse_string_literal(pair: Pair<Rule>) -> Result<Expr, ParseError> {

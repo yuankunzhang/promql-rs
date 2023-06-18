@@ -56,6 +56,7 @@ left_or_right           = { "group_left" | "group_right" }
 
 primary = _{
     number_literal
+    | paren_expr
     | string_literal
 }
 
@@ -72,6 +73,8 @@ primary = _{
 grouping_labels       = _{ "(" ~ grouping_label_list? ~ ")" }
 grouping_label_list   = _{ grouping_label_item ~ ("," ~ grouping_label_item)* }
 grouping_label_item   = _{ identifier }
+
+paren_expr = { "(" ~ expr ~ ")" }
 
 vector_selector    = { (metric ~ label_matchers?) | label_matchers }
 metric             = { identifier }
