@@ -16,8 +16,8 @@ fn parse_string(input: &str) -> String {
 
 #[test]
 fn strings() {
-    assert_eq!(parse_string(r#""""#), r#""""#);
-    assert_eq!(parse_string(r#""foo""#), r#""foo""#);
-    assert_eq!(parse_string(r#""foo \"bar\"""#), r#""foo \"bar\"""#);
-    assert_eq!(parse_string(r#"'foo \"bar\"'"#), r#"'foo \"bar\"'"#);
+    assert_eq!(parse_string(r#""""#), r#""#);
+    assert_eq!(parse_string(r#""foo""#), r#"foo"#);
+    assert_eq!(parse_string(r#""foo \"bar\"""#), r#"foo \"bar\""#);
+    assert_eq!(parse_string(r#"'foo \"bar\"'"#), r#"foo \"bar\""#);
 }

@@ -1,3 +1,10 @@
+vector_selector    = { (metric ~ label_matchers?) | label_matchers }
+metric             = { identifier }
+label_matchers     = { "{" ~ label_matcher_list? ~ "}" }
+label_matcher_list = _{ label_matcher_item ~ ("," ~ label_matcher_item)* }
+label_matcher_item = { identifier ~ match_op ~ string }
+match_op           = { "!=" | "=~" | "!~" | "=" }
+
 duration = {
     duration_millisecond
     | duration_second
@@ -56,9 +63,11 @@ inf    = @{ ("I" | "i") ~ ("N" | "n") ~ ("F" | "f") }
 
 string_literal = { string }
 
-string        = @{ double_quoted | single_quoted }
-double_quoted = @{ "\"" ~ ((!("\"" | "\\") ~ ANY) | escape)* ~ "\"" }
-single_quoted = @{ "'" ~ ((!("'" | "\\") ~ ANY) | escape)* ~ "'" }
+string              = _{ double_quoted | single_quoted }
+double_quoted       = _{ "\"" ~ double_quoted_inner ~ "\"" }
+single_quoted       = _{ "'" ~ single_quoted_inner ~ "'" }
+double_quoted_inner = @{ ((!("\"" | "\\") ~ ANY) | escape)* }
+single_quoted_inner = @{ ((!("'" | "\\") ~ ANY) | escape)* }
 
 escape  = @{ "\\" ~ ("\\" | "\"" | "'" | "/" | "a" | "b" | "f" | "n" | "r" | "t" | "v" | unicode) }
 unicode = @{

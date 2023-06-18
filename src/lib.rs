@@ -1,6 +1,4 @@
 pub mod ast;
-pub mod functions;
-pub mod parser;
+pub mod function;
 
-#[cfg(test)]
-mod test_parser;
+mod tests;

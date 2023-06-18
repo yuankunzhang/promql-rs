@@ -230,20 +230,16 @@ pub struct ParenExpr {
     pub expr: Box<Expr>,
 }
 
-/// String literals may be specified as literals in single quotes, double quotes
-/// or backticks.
+/// Strings may be specified as literals in single quotes or double quotes.
 ///
 /// In single or double quotes a backslash begins an escape sequence, which may
 /// be followed by a, b, f, n, r, t, v or \. Specific characters can be provided
 /// using octal (\nnn) or hexadecimal (\xnn, \unnnn and \Unnnnnnnn).
 ///
-/// No escaping is processed inside backticks.
-///
 /// Example:
 ///
 ///     "this is a string"
 ///     'these are unescaped: \n \\ \t'
-///     `these are not unescaped: \n ' " \t`
 #[derive(Debug)]
 pub struct StringLiteral {
     pub value: String,
@@ -274,7 +270,7 @@ pub struct UnaryExpr {
     pub rhs: Box<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MatchOp {
     Equal,
     NotEqual,
@@ -296,7 +292,7 @@ impl FromStr for MatchOp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct LabelMatcher {
     pub op: MatchOp,
     pub name: String,
