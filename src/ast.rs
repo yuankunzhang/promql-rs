@@ -1,31 +1,96 @@
 use std::{str::FromStr, time::Duration};
 
-use crate::functions::*;
+use crate::function::*;
 
 #[derive(Debug)]
 pub enum Expr {
-    BinaryExpr(BinaryExpr),
-    UnaryExpr(UnaryExpr),
-    ParenExpr(ParenExpr),
     AggregateExpr(AggregateExpr),
-    FunctionCall(FunctionCall),
-    SubqueryExpr(SubqueryExpr),
+    BinaryExpr(BinaryExpr),
+    Call(Call),
     MatrixSelector(MatrixSelector),
-    VectorSelector(VectorSelector),
+    SubqueryExpr(SubqueryExpr),
     NumberLiteral(NumberLiteral),
+    ParenExpr(ParenExpr),
     StringLiteral(StringLiteral),
+    UnaryExpr(UnaryExpr),
+    VectorSelector(VectorSelector),
 }
 
 impl Expr {
     pub fn get_type(&self) -> ValueType {
         match self {
+            Expr::AggregateExpr(_) => ValueType::Vector,
+            Expr::Call(call) => call.func.return_type,
             Expr::MatrixSelector(_) => ValueType::Matrix,
-            Expr::VectorSelector(_) => ValueType::Vector,
+            Expr::SubqueryExpr(_) => ValueType::Matrix,
             Expr::NumberLiteral(_) => ValueType::Scalar,
+            Expr::ParenExpr(p) => p.expr.get_type(),
             Expr::StringLiteral(_) => ValueType::String,
-            _ => ValueType::None,
+            Expr::UnaryExpr(u) => u.rhs.get_type(),
+            Expr::VectorSelector(_) => ValueType::Vector,
+            Expr::BinaryExpr(b) => {
+                if b.lhs.get_type() == ValueType::Scalar && b.rhs.get_type() == ValueType::Scalar {
+                    ValueType::Scalar
+                } else {
+                    ValueType::Vector
+                }
+            }
         }
     }
+}
+
+#[derive(Debug)]
+pub enum AggregateOp {
+    Avg,
+    Bottomk,
+    Count,
+    CountValues,
+    Group,
+    Max,
+    Min,
+    Stddev,
+    Stdvar,
+    Quantile,
+    Sum,
+    Topk,
+}
+
+impl FromStr for AggregateOp {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "avg" => Ok(AggregateOp::Avg),
+            "bottomk" => Ok(AggregateOp::Bottomk),
+            "count" => Ok(AggregateOp::Count),
+            "count_values" => Ok(AggregateOp::CountValues),
+            "group" => Ok(AggregateOp::Group),
+            "max" => Ok(AggregateOp::Max),
+            "min" => Ok(AggregateOp::Min),
+            "stddev" => Ok(AggregateOp::Stddev),
+            "stdvar" => Ok(AggregateOp::Stdvar),
+            "quantile" => Ok(AggregateOp::Quantile),
+            "sum" => Ok(AggregateOp::Sum),
+            "topk" => Ok(AggregateOp::Topk),
+            _ => Err(format!("Unknown aggregate operator: {}", s)),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum AggregateModifier {
+    None,
+    By(Vec<String>),
+    Without(Vec<String>),
+}
+
+/// AggregateExpr represents an aggregation operation over a vector.
+#[derive(Debug)]
+pub struct AggregateExpr {
+    pub op: AggregateOp,
+    pub expr: Box<Expr>,
+    pub param: Option<Box<Expr>>,
+    pub modifier: AggregateModifier,
 }
 
 #[derive(Debug, PartialEq)]
@@ -75,27 +140,113 @@ impl FromStr for BinaryOp {
 }
 
 #[derive(Debug)]
-pub enum VectorModifier {
+pub enum VectorMatchCardinality {
+    OneToOne,
+    OneToMany,
+    ManyToOne,
+    ManyToMany,
+}
+
+#[derive(Debug)]
+pub enum VectorMatchGrouping {
     None,
     On(Vec<String>),
     Ignoring(Vec<String>),
 }
 
 #[derive(Debug)]
-pub enum GroupModifier {
-    None,
-    Left(Vec<String>),
-    Right(Vec<String>),
+pub struct VectorMatching {
+    pub cardinality: VectorMatchCardinality,
+    pub grouping: VectorMatchGrouping,
 }
 
+/// BinaryExpr represents a binary operation between two expressions.
 #[derive(Debug)]
 pub struct BinaryExpr {
     pub op: BinaryOp,
     pub lhs: Box<Expr>,
     pub rhs: Box<Expr>,
     pub return_bool: bool,
-    pub vector_modifier: VectorModifier,
-    pub group_modifier: GroupModifier,
+    pub vector_matching: VectorMatching,
+}
+
+/// Call represents a function call.
+#[derive(Debug)]
+pub struct Call {
+    pub func: &'static Function,
+    pub args: Vec<Expr>,
+}
+
+/// MatrixSelector represents a matrix selection.
+#[derive(Debug)]
+pub struct MatrixSelector {
+    pub vector_selector: Box<Expr>,
+    pub range: Duration,
+}
+
+#[derive(Debug)]
+pub enum AtModifier {
+    None,
+    Start,
+    End,
+    Time(u64),
+}
+
+/// SubqueryExpr represents a subquery expression.
+#[derive(Debug)]
+pub struct SubqueryExpr {
+    pub expr: Box<Expr>,
+    pub range: Duration,
+    pub step: Duration,
+    pub at: AtModifier,
+}
+
+/// Number literals can be written as literal integer (octal, decimal, or
+/// hexadecimal) or floating-point numbers in the format:
+///
+/// [-+]?(
+///       [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
+///     | 0[xX][0-9a-fA-F]+
+///     | [nN][aA][nN]
+///     | [iI][nN][fF]
+/// )
+///
+/// Examples:
+///
+///     23
+///     -2.43
+///     3.4e-9
+///     0x8f
+///     -Inf
+///     NaN
+#[derive(Debug)]
+pub struct NumberLiteral {
+    pub value: f64,
+}
+
+/// ParenExpr represents an expression wrapped in parentheses.
+#[derive(Debug)]
+pub struct ParenExpr {
+    pub expr: Box<Expr>,
+}
+
+/// String literals may be specified as literals in single quotes, double quotes
+/// or backticks.
+///
+/// In single or double quotes a backslash begins an escape sequence, which may
+/// be followed by a, b, f, n, r, t, v or \. Specific characters can be provided
+/// using octal (\nnn) or hexadecimal (\xnn, \unnnn and \Unnnnnnnn).
+///
+/// No escaping is processed inside backticks.
+///
+/// Example:
+///
+///     "this is a string"
+///     'these are unescaped: \n \\ \t'
+///     `these are not unescaped: \n ' " \t`
+#[derive(Debug)]
+pub struct StringLiteral {
+    pub value: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -116,108 +267,11 @@ impl FromStr for UnaryOp {
     }
 }
 
+/// UnaryExpr represents a unary operation.
 #[derive(Debug)]
 pub struct UnaryExpr {
     pub op: UnaryOp,
     pub rhs: Box<Expr>,
-}
-
-#[derive(Debug)]
-pub struct ParenExpr {
-    pub expr: Box<Expr>,
-}
-
-#[derive(Debug)]
-pub enum AggregateOp {
-    Avg,
-    Bottomk,
-    Count,
-    CountValues,
-    Group,
-    Max,
-    Min,
-    Stddev,
-    Stdvar,
-    Quantile,
-    Sum,
-    Topk,
-}
-
-impl FromStr for AggregateOp {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "avg" => Ok(AggregateOp::Avg),
-            "bottomk" => Ok(AggregateOp::Bottomk),
-            "count" => Ok(AggregateOp::Count),
-            "count_values" => Ok(AggregateOp::CountValues),
-            "group" => Ok(AggregateOp::Group),
-            "max" => Ok(AggregateOp::Max),
-            "min" => Ok(AggregateOp::Min),
-            "stddev" => Ok(AggregateOp::Stddev),
-            "stdvar" => Ok(AggregateOp::Stdvar),
-            "quantile" => Ok(AggregateOp::Quantile),
-            "sum" => Ok(AggregateOp::Sum),
-            "topk" => Ok(AggregateOp::Topk),
-            _ => Err(format!("Unknown aggregate operator: {}", s)),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum AggregateModifier {
-    None,
-    By(Vec<String>),
-    Without(Vec<String>),
-}
-
-#[derive(Debug)]
-pub struct AggregateExpr {
-    pub op: AggregateOp,
-    pub expr: Box<Expr>,
-    pub modifier: AggregateModifier,
-}
-
-#[derive(Debug)]
-pub enum AtModifier {
-    None,
-    Start,
-    End,
-    Time(u64),
-}
-
-#[derive(Debug)]
-pub enum OffsetModifier {
-    None,
-    Duration(Duration),
-}
-
-#[derive(Debug)]
-pub struct FunctionCall {
-    pub func: &'static Function,
-    pub args: Vec<Expr>,
-}
-
-#[derive(Debug)]
-pub struct SubqueryExpr {
-    pub expr: Box<Expr>,
-    pub range: Duration,
-    pub step: Duration,
-}
-
-#[derive(Debug)]
-pub struct MatrixSelector {
-    pub vector_selector: VectorSelector,
-    pub range: Duration,
-}
-
-#[derive(Debug)]
-pub struct VectorSelector {
-    pub metric: String,
-    pub label_matchers: Vec<LabelMatcher>,
-    pub offset: OffsetModifier,
-    pub at: AtModifier,
 }
 
 #[derive(Debug)]
@@ -249,44 +303,12 @@ pub struct LabelMatcher {
     pub value: String,
 }
 
-/// Number literals can be written as literal integer (octal, decimal, or
-/// hexadecimal) or floating-point numbers in the format:
-///
-/// [-+]?(
-///       [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
-///     | 0[xX][0-9a-fA-F]+
-///     | [nN][aA][nN]
-///     | [iI][nN][fF]
-/// )
-///
-/// Examples:
-///
-///     23
-///     -2.43
-///     3.4e-9
-///     0x8f
-///     -Inf
-///     NaN
+/// VectorSelector represents a vector selection.
 #[derive(Debug)]
-pub struct NumberLiteral {
-    pub value: f64,
-}
-
-/// String literals may be specified as literals in single quotes, double quotes
-/// or backticks.
-///
-/// In single or double quotes a backslash begins an escape sequence, which may
-/// be followed by a, b, f, n, r, t, v or \. Specific characters can be provided
-/// using octal (\nnn) or hexadecimal (\xnn, \unnnn and \Unnnnnnnn).
-///
-/// No escaping is processed inside backticks.
-///
-/// Example:
-///
-///     "this is a string"
-///     'these are unescaped: \n \\ \t'
-///     `these are not unescaped: \n ' " \t`
-#[derive(Debug)]
-pub struct StringLiteral {
-    pub value: String,
+pub struct VectorSelector {
+    pub metric: String,
+    pub label_matchers: Vec<LabelMatcher>,
+    pub original_offset: Duration,
+    pub offset: Duration,
+    pub at: AtModifier,
 }
