@@ -33,7 +33,7 @@ fn parse(input: &str) -> VectorSelector {
 
     VectorSelector {
         metric,
-        label_matchers: label_matchers,
+        label_matchers,
         original_offset: Duration::default(),
         offset: Duration::default(),
         at: AtModifier::None,

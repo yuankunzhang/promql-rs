@@ -1,4 +1,5 @@
-pub mod duration;
-pub mod number;
-pub mod string;
-pub mod vector_selector;
+mod duration;
+mod number;
+mod parser;
+mod string;
+mod vector_selector;
