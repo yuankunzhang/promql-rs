@@ -302,7 +302,6 @@ fn parse_aggregate_modifier(pair: Pair<Rule>) -> Result<AggregateModifier, Parse
 }
 
 fn parse_function_call(pair: Pair<Rule>) -> Result<Expr, ParseError> {
-    println!("parse_function_call: {:#?}", pair);
     let mut pairs = pair.into_inner();
     let name = pairs.next().unwrap().as_str();
     let func = FUNCTIONS
