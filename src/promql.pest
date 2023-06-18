@@ -6,9 +6,10 @@ prefix   = _{ neg | pos }
 neg      = { "-" }
 pos      = { "+" }
 
-postfix  = _{ matrix | subquery }
+postfix  = _{ matrix | subquery | offset }
 matrix   = { "[" ~ duration ~ "]" }
 subquery = { "[" ~ duration ~ ":" ~ duration? ~ "]" }
+offset   = { "offset" ~ duration }
 
 infix    = _{ add | sub | mul | div | mod | pow | eq | ne | le | lt | ge | gt | and | or | unless | atan2 }
 

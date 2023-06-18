@@ -61,6 +61,7 @@ macro_rules! subquery_expr {
             expr: Box::new($expr),
             range: Duration::from_secs($range),
             step: Duration::from_secs($step),
+            offset: Duration::default(),
             at: AtModifier::None,
         })
     };
@@ -76,7 +77,7 @@ macro_rules! unary_expr {
 }
 
 macro_rules! vector_selector {
-    ($metric:expr $(, $op:expr, $name:expr, $value:expr)*) => {
+    ($metric:expr, $offset:expr $(, $op:expr, $name:expr, $value:expr)*) => {
         Expr::VectorSelector(VectorSelector {
             metric: $metric.to_string(),
             label_matchers: vec![$(LabelMatcher {
@@ -84,6 +85,15 @@ macro_rules! vector_selector {
                 name: $name.to_string(),
                 value: $value.to_string(),
             }),*],
+            original_offset: Duration::default(),
+            offset: Duration::from_secs($offset),
+            at: AtModifier::None,
+        })
+    };
+    ($metric:expr) => {
+        Expr::VectorSelector(VectorSelector {
+            metric: $metric.to_string(),
+            label_matchers: vec![],
             original_offset: Duration::default(),
             offset: Duration::default(),
             at: AtModifier::None,
@@ -130,6 +140,7 @@ fn assert_parse_inner(a: Expr, b: Expr) {
         }
         (Expr::VectorSelector(a), Expr::VectorSelector(b)) => {
             assert_eq!(a.metric, b.metric);
+            assert_eq!(a.offset, b.offset);
             assert_eq!(a.label_matchers.len(), b.label_matchers.len());
         }
         _ => panic!("Expressions do not match"),
@@ -166,7 +177,7 @@ fn parse_function_calls() {
         r#"absent(nonexistent{job="myjob"})"#,
         function_call!(
             "absent",
-            vector_selector!("nonexistent", "=", "job", "myjob")
+            vector_selector!("nonexistent", 0, "=", "job", "myjob")
         ),
     );
 }
@@ -177,7 +188,7 @@ fn parse_matrix_selectors() {
     assert_parse(
         r#"http_requests_total{foo="bar"}[5m6s]"#,
         matrix_selector!(
-            vector_selector!("http_requests_total", "=", "foo", "bar"),
+            vector_selector!("http_requests_total", 0, "=", "foo", "bar"),
             306
         ),
     );
@@ -211,6 +222,14 @@ fn parse_number_literals() {
 }
 
 #[test]
+fn parse_offset_exprs() {
+    assert_parse(
+        "http_requests_total offset 5m",
+        vector_selector!("http_requests_total", 300),
+    );
+}
+
+#[test]
 fn parse_string_literals() {
     assert_parse(r#""""#, string_literal!(r#""#));
     assert_parse(r#""foo""#, string_literal!(r#"foo"#));
@@ -222,7 +241,7 @@ fn parse_string_literals() {
 fn parse_subquery_exprs() {
     assert_parse(
         "http_requests_total[5m:1m]",
-        subquery_expr!(vector_selector!("http_requests_total"), 300, 60),
+        subquery_expr!(vector_selector!("http_requests_total", 0), 300, 60),
     );
 }
 
@@ -237,16 +256,16 @@ fn parse_unary_exprs() {
 
 #[test]
 fn parse_vector_selectors() {
-    assert_parse("up", vector_selector!("up"));
-    assert_parse("abs", vector_selector!("abs"));
+    assert_parse("up", vector_selector!("up", 0));
+    assert_parse("abs", vector_selector!("abs", 0));
     assert_parse("up{}", vector_selector!("up"));
     assert_parse("{}", vector_selector!(""));
     assert_parse(
         r#"up{foo!="bar", baz=~"qux"}"#,
-        vector_selector!("up", "!=", "foo", "bar", "=~", "baz", "qux"),
+        vector_selector!("up", 0, "!=", "foo", "bar", "=~", "baz", "qux"),
     );
     assert_parse(
         r#"{foo="bar", baz!~"qux"}"#,
-        vector_selector!("", "=", "foo", "bar", "!~", "baz", "qux"),
+        vector_selector!("", 0, "=", "foo", "bar", "!~", "baz", "qux"),
     );
 }

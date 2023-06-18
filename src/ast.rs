@@ -198,6 +198,7 @@ pub struct SubqueryExpr {
     pub expr: Box<Expr>,
     pub range: Duration,
     pub step: Duration,
+    pub offset: Duration,
     pub at: AtModifier,
 }
 

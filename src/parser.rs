@@ -20,11 +20,12 @@ lazy_static::lazy_static! {
         // 1. ^
         // 2. - +         (prefix)
         // 3. [] [:]      (postfix)
-        // 4. * / % atan2
-        // 5. - +
-        // 6. == != <= < >= >
-        // 7. and unless
-        // 8. or
+        // 4. offset at   (postfix)
+        // 5. * / % atan2
+        // 6. - +
+        // 7. == != <= < >= >
+        // 8. and unless
+        // 9. or
         //
         // Operators on the same precedence level are left-associated, except
         // for ^ which is right-associated.
@@ -42,6 +43,7 @@ lazy_static::lazy_static! {
                 | Op::infix(div, Left)
                 | Op::infix(r#mod, Left)
                 | Op::infix(atan2, Left))
+            .op(Op::postfix(offset))
             .op(Op::postfix(matrix) | Op::postfix(subquery))
             .op(Op::prefix(neg) | Op::prefix(pos))
             .op(Op::infix(pow, Right))
@@ -82,6 +84,14 @@ impl From<String> for ParseError {
     }
 }
 
+impl From<&str> for ParseError {
+    fn from(e: &str) -> Self {
+        ParseError {
+            message: e.to_string(),
+        }
+    }
+}
+
 pub fn parse(promql: &str) -> Result<Expr, ParseError> {
     let mut pairs = PromQLParser::parse(Rule::promql, promql)?;
     Ok(parse_expr(pairs.next().unwrap())?)
@@ -99,23 +109,26 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     };
 
     let parse_postfix = |lhs: Result<Expr, ParseError>, op: Pair<Rule>| parse_postfix(lhs, op);
-
     let parse_prefix = |op, rhs| parse_prefix(op, rhs);
+    let parse_infix = |lhs, op, rhs| parse_infix(lhs, op, rhs);
 
     PRATT_PARSER
         .map_primary(parse_primary)
         .map_postfix(parse_postfix)
         .map_prefix(parse_prefix)
+        .map_infix(parse_infix)
         .parse(pair.into_inner())
 }
 
 fn parse_postfix(lhs: Result<Expr, ParseError>, op: Pair<Rule>) -> Result<Expr, ParseError> {
+    let mut expr = lhs?;
+
     match op.as_rule() {
         Rule::matrix => {
             let mut pairs = op.into_inner();
             let range = parse_duration(pairs.next().unwrap())?;
             Ok(Expr::MatrixSelector(MatrixSelector {
-                vector_selector: Box::new(lhs?),
+                vector_selector: Box::new(expr),
                 range,
             }))
         }
@@ -124,11 +137,32 @@ fn parse_postfix(lhs: Result<Expr, ParseError>, op: Pair<Rule>) -> Result<Expr, 
             let range = parse_duration(pairs.next().unwrap())?;
             let step = parse_duration(pairs.next().unwrap())?;
             Ok(Expr::SubqueryExpr(SubqueryExpr {
-                expr: Box::new(lhs?),
+                expr: Box::new(expr),
                 at: AtModifier::None,
+                offset: Duration::default(),
                 range,
                 step,
             }))
+        }
+        Rule::offset => {
+            let offset = parse_duration(op.into_inner().next().unwrap())?;
+            println!("offset: {:#?}", offset);
+            match expr {
+                Expr::VectorSelector(ref mut vs) => {
+                    vs.offset = offset;
+                }
+                Expr::MatrixSelector(ref mut ms) => match ms.vector_selector.as_mut() {
+                    Expr::VectorSelector(ref mut vs) => {
+                        vs.offset = offset;
+                    }
+                    _ => return Err("invalid matrix selector".into()),
+                },
+                Expr::SubqueryExpr(ref mut sq) => {
+                    sq.offset = offset;
+                }
+                _ => return Err("offset modifier must be preceded by an instant vector selector, a range vector selector, or a subquery".into()),
+            }
+            Ok(expr)
         }
         _ => unreachable!(),
     }
@@ -146,6 +180,18 @@ fn parse_prefix(op: Pair<Rule>, rhs: Result<Expr, ParseError>) -> Result<Expr, P
             rhs: Box::new(expr),
         })),
     }
+}
+
+fn parse_infix(
+    lhs: Result<Expr, ParseError>,
+    op: Pair<Rule>,
+    rhs: Result<Expr, ParseError>,
+) -> Result<Expr, ParseError> {
+    println!(
+        "parse_infix:\nlhs: {:#?}\nop: {:#?}\nrhs: {:#?}",
+        lhs, op, rhs
+    );
+    unreachable!();
 }
 
 fn parse_duration(pair: Pair<Rule>) -> Result<Duration, ParseError> {
