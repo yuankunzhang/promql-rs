@@ -4,6 +4,19 @@ A PromQL parser written in Rust.
 
 ## Example
 
+The minimal usage example:
+
+```rust
+use promql_rs::parser;
+
+fn main() {
+    let ast = parser::parse(r#"sum(rate(http_request_total{app="prometheus"}[5m])) by (host)"#);
+    println!("{:#?}", ast.unwrap());
+}
+```
+
+This will produce the following output:
+
 ```rust
 AggregateExpr(
     AggregateExpr {
