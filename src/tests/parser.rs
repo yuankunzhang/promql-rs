@@ -55,6 +55,17 @@ macro_rules! string_literal {
     };
 }
 
+macro_rules! subquery_expr {
+    ($expr:expr, $range:expr, $step:expr) => {
+        Expr::SubqueryExpr(SubqueryExpr {
+            expr: Box::new($expr),
+            range: Duration::from_secs($range),
+            step: Duration::from_secs($step),
+            at: AtModifier::None,
+        })
+    };
+}
+
 macro_rules! unary_expr {
     ($op:expr, $rhs:expr) => {
         Expr::UnaryExpr(UnaryExpr {
@@ -107,6 +118,11 @@ fn assert_parse_inner(a: Expr, b: Expr) {
         }
         (Expr::StringLiteral(a), Expr::StringLiteral(b)) => {
             assert_eq!(a.value, b.value);
+        }
+        (Expr::SubqueryExpr(a), Expr::SubqueryExpr(b)) => {
+            assert_eq!(a.range, b.range);
+            assert_eq!(a.step, b.step);
+            assert_parse_inner(*a.expr, *b.expr);
         }
         (Expr::UnaryExpr(a), Expr::UnaryExpr(b)) => {
             assert_eq!(a.op, b.op);
@@ -200,6 +216,14 @@ fn parse_string_literals() {
     assert_parse(r#""foo""#, string_literal!(r#"foo"#));
     assert_parse(r#""foo \"bar\"""#, string_literal!(r#"foo "bar""#));
     assert_parse(r#"'foo \"bar\"'"#, string_literal!(r#"foo "bar""#));
+}
+
+#[test]
+fn parse_subquery_exprs() {
+    assert_parse(
+        "http_requests_total[5m:1m]",
+        subquery_expr!(vector_selector!("http_requests_total"), 300, 60),
+    );
 }
 
 #[test]
