@@ -1,297 +1,4 @@
-promql = _{ SOI ~ expr? ~ EOI }
-
-expr   = { prefix* ~ primary ~ (infix ~ prefix* ~ primary)* }
-
-prefix = _{ neg | pos }
-neg    = { "-" }
-pos    = { "+" }
-
-infix  = _{ add | sub | mul | div | mod | pow | eq | ne | le | lt | ge | gt | and | or | unless | atan2 }
-
-add    = { _add ~ bin_modifier? }
-sub    = { _sub ~ bin_modifier? }
-mul    = { _mul ~ bin_modifier? }
-div    = { _div ~ bin_modifier? }
-mod    = { _mod ~ bin_modifier? }
-pow    = { _pow ~ bin_modifier? }
-eq     = { _eq ~ bin_modifier? }
-ne     = { _ne ~ bin_modifier? }
-le     = { _le ~ bin_modifier? }
-lt     = { _lt ~ bin_modifier? }
-ge     = { _ge ~ bin_modifier? }
-gt     = { _gt ~ bin_modifier? }
-and    = { _and ~ bin_modifier? }
-or     = { _or ~ bin_modifier? }
-unless = { _unless ~ bin_modifier? }
-atan2  = { _atan2 ~ bin_modifier? }
-
-_add    = { "+" }
-_sub    = { "-" }
-_mul    = { "*" }
-_div    = { "/" }
-_mod    = { "%" }
-_pow    = { "^" }
-_eq     = { "==" }
-_ne     = { "!=" }
-_le     = { "<=" }
-_lt     = { "<" }
-_ge     = { ">=" }
-_gt     = { ">" }
-_and    = { "and" }
-_or     = { "or" }
-_unless = { "unless" }
-_atan2  = { "atan2" }
-
-bin_modifier = { (bool_modifier ~ group_modifiers?) | group_modifiers }
-bool_modifier = { "bool" }
-group_modifiers = _{ on_or_ignoring_modifier ~ left_or_right_modifier? }
-on_or_ignoring_modifier = { on_or_ignoring ~ grouping_labels }
-on_or_ignoring = { "on" | "ignoring" }
-left_or_right_modifier = { left_or_right ~ grouping_labels? }
-left_or_right = { "group_left" | "group_right" }
-
-primary = _{
-    number_literal
-    | string_literal
-    | aggregate_expr
-    | function_call
-    | modifier_expr
-    | paren_expr
-}
-
-aggregate_expr = { aggregate_op ~ (
-    (aggregate_modifier ~ function_call_body)
-    | (function_call_body ~ aggregate_modifier?)
-) }
-aggregate_op = {
-    "avg"
-    | "bottomk"
-    | "count"
-    | "count_values"
-    | "group"
-    | "max"
-    | "min"
-    | "quantile"
-    | "stddev"
-    | "stdvar"
-    | "sum"
-    | "topk"
-}
-aggregate_modifier = { aggregate_modifier_op ~  grouping_labels }
-aggregate_modifier_op = { "by" | "without" }
-
-grouping_labels = _{ "(" ~ grouping_label_list? ~ ")" }
-grouping_label_list = _{ grouping_label ~ ("," ~ grouping_label)* }
-grouping_label = _{ identifier }
-
-function_call = { function_call_name ~ function_call_body }
-function_call_body = { "(" ~ function_call_args? ~ ")" }
-function_call_args = _{ expr ~ ("," ~ expr)* }
-function_call_name = {
-    "abs"
-    | "absent"
-    | "absent_over_time"
-    | "ceil"
-    | "changes"
-    | "clamp"
-    | "clamp_max"
-    | "clamp_min"
-    | "day_of_month"
-    | "day_of_week"
-    | "day_of_year"
-    | "days_in_month"
-    | "delta"
-    | "deriv"
-    | "exp"
-    | "floor"
-    | "histogram_count"
-    | "histogram_sum"
-    | "histogram_fraction"
-    | "histogram_quantile"
-    | "holt_winters"
-    | "hour"
-    | "idelta"
-    | "increase"
-    | "irate"
-    | "label_join"
-    | "label_replace"
-    | "ln"
-    | "log2"
-    | "log10"
-    | "minute"
-    | "month"
-    | "predict_linear"
-    | "rate"
-    | "resets"
-    | "round"
-    | "scalar"
-    | "sgn"
-    | "sort"
-    | "sort_desc"
-    | "sqrt"
-    | "time"
-    | "timestamp"
-    | "vector"
-    | "year"
-    | aggregation_function
-    | trigonomic_function
-}
-aggregation_function = {
-    "avg_over_time"
-    | "count_over_time"
-    | "max_over_time"
-    | "min_over_time"
-    | "quantile_over_time"
-    | "stddev_over_time"
-    | "stdvar_over_time"
-    | "sum_over_time"
-    | "last_over_time"
-    | "present_over_time"
-}
-trigonomic_function = {
-    "acosh"
-    | "acos"
-    | "asinh"
-    | "asin"
-    | "atanh"
-    | "atan"
-    | "cosh"
-    | "cos"
-    | "sinh"
-    | "sin"
-    | "tanh"
-    | "tan"
-    | "deg"
-    | "pi"
-    | "rad"
-}
-
-paren_expr = { "(" ~ expr ~ ")" }
-
-modifier_expr = { (subquery_expr | matrix_selector) ~ modifiers? }
-modifiers = {
-    (offset_expr ~ step_invariant_expr?)
-    | (step_invariant_expr ~ offset_expr?)
-}
-
-subquery_expr = { vector_selector ~ "[" ~ duration ~ ":" ~ duration? ~ "]" }
-
-/// The offset modifier allows changing the time offset for individual instant and range vectors in a query.
-/// 
-/// For example, the following expression returns the value of http_requests_total 5 minutes in the past relative to the current query evaluation time:
-/// 
-///     http_requests_total offset 5m
-/// 
-/// Note that the offset modifier always needs to follow the selector immediately, i.e. the following would be correct:
-/// 
-///     sum(http_requests_total{method="GET"} offset 5m) // GOOD.
-/// 
-/// While the following would be incorrect:
-/// 
-///     sum(http_requests_total{method="GET"}) offset 5m // INVALID.
-/// 
-/// The same works for range vectors. This returns the 5-minute rate that http_requests_total had a week ago:
-/// 
-///     rate(http_requests_total[5m] offset 1w)
-/// 
-/// For comparisons with temporal shifts forward in time, a negative offset can be specified:
-/// 
-///     rate(http_requests_total[5m] offset -1w)
-offset_expr = { "offset" ~ "-"? ~ duration }
-
-/// The @ modifier allows changing the evaluation time for individual instant and range vectors in a query. The time supplied to the @ modifier is a unix timestamp and described with a float literal.
-/// 
-/// For example, the following expression returns the value of http_requests_total at 2021-01-04T07:40:00+00:00:
-/// 
-///     http_requests_total @ 1609746000
-/// 
-/// Note that the @ modifier always needs to follow the selector immediately, i.e. the following would be correct:
-/// 
-///     sum(http_requests_total{method="GET"} @ 1609746000) // GOOD.
-/// 
-/// While the following would be incorrect:
-/// 
-///     sum(http_requests_total{method="GET"}) @ 1609746000 // INVALID.
-/// 
-/// The same works for range vectors. This returns the 5-minute rate that http_requests_total had at 2021-01-04T07:40:00+00:00:
-/// 
-///     rate(http_requests_total[5m] @ 1609746000)
-/// 
-/// The @ modifier supports all representation of float literals described above within the limits of int64. It can also be used along with the offset modifier where the offset is applied relative to the @ modifier time irrespective of which modifier is written first. These 2 queries will produce the same result.
-/// 
-///     # offset after @
-///     http_requests_total @ 1609746000 offset 5m
-///     # offset before @
-///     http_requests_total offset 5m @ 1609746000
-/// 
-/// Additionally, start() and end() can also be used as values for the @ modifier as special values.
-/// 
-/// For a range query, they resolve to the start and end of the range query respectively and remain the same for all steps.
-/// 
-/// For an instant query, start() and end() both resolve to the evaluation time.
-/// 
-///     http_requests_total @ start()
-///     rate(http_requests_total[5m] @ end())
-step_invariant_expr = { "@" ~ (number | (at_modifier_preprocessor ~ "(" ~ ")")) }
-at_modifier_preprocessor = { "start" | "end" }
-
-/// Range vector literals work like instant vector literals, except that they select a range of samples back from the current instant. Syntactically, a time duration is appended in square brackets ([]) at the end of a vector selector to specify how far back in time values should be fetched for each resulting range vector element. The range is a closed interval, i.e. samples with timestamps coinciding with either boundary of the range are still included in the selection.
-/// 
-/// In this example, we select all the values we have recorded within the last 5 minutes for all time series that have the metric name http_requests_total and a job label set to prometheus:
-/// 
-///     http_requests_total{job="prometheus"}[5m]
-matrix_selector = { vector_selector ~ ("[" ~ duration ~ "]")? }
-
-/// Instant vector selectors allow the selection of a set of time series and a single sample value for each at a given timestamp (instant): in the simplest form, only a metric name is specified. This results in an instant vector containing elements for all time series that have this metric name.
-/// 
-/// This example selects all time series that have the http_requests_total metric name:
-/// 
-///     http_requests_total
-/// 
-/// It is possible to filter these time series further by appending a comma separated list of label matchers in curly braces ({}). Example:
-/// 
-///     http_requests_total{job="prometheus",group="canary"}
-/// 
-/// It is also possible to negatively match a label value, or to match label values against regular expressions. The following label matching operators exist:
-/// 
-///     =: Select labels that are exactly equal to the provided string.
-///     !=: Select labels that are not equal to the provided string.
-///     =~: Select labels that regex-match the provided string.
-///     !~: Select labels that do not regex-match the provided string.
-vector_selector = {
-    (metric_identifier ~ label_matchers)
-    | metric_identifier
-    | label_matchers
-}
-metric_identifier = { identifier }
-label_matchers = { "{" ~ (label_match_list)? ~ "}" }
-label_match_list = _{ label_matcher ~ ("," ~ label_matcher)* }
-label_matcher = { identifier ~ match_op ~ string }
-match_op = { "!=" | "=~" | "!~" | "=" }
-string_literal = { string }
-
-number_literal = { number }
-
-/// Time durations are specified as a number, followed immediately by one of the following units:
-/// 
-///     ms - milliseconds
-///     s - seconds
-///     m - minutes
-///     h - hours
-///     d - days - assuming a day has always 24h
-///     w - weeks - assuming a week has always 7d
-///     y - years - assuming a year has always 365d
-/// 
-/// Time durations can be combined, by concatenation. Units must be ordered from the longest to the shortest. A given unit must only appear once in a time duration.
-/// 
-/// Here are some examples of valid time durations:
-/// 
-///     5h
-///     1h30m
-///     5m
-///     10s
-
-duration = @{
+duration = {
     duration_millisecond
     | duration_second
     | duration_minute
@@ -335,18 +42,7 @@ duration_second = @{ int ~ "s" ~ (
 )? }
 duration_millisecond = @{ int ~ "ms" }
 
-string                 = @{ double_quoted_string | single_quoted_string | backtick_quoted_string }
-double_quoted_string   = @{ "\"" ~ ((!("\"" | "\\") ~ ANY) | escape)* ~ "\"" }
-single_quoted_string   = @{ "'" ~ ((!("'" | "\\") ~ ANY) | escape)* ~ "'" }
-backtick_quoted_string = @{ "`" ~ (!"`" ~ ANY)* ~ "`" }
-
-escape  = @{ "\\" ~ ("\\" | "\"" | "'" | "/" | "a" | "b" | "f" | "n" | "r" | "t" | "v" | unicode) }
-unicode = @{
-    ('0'..'7'{3})
-    | ("x" ~ ASCII_HEX_DIGIT{2})
-    | ("u" ~ ASCII_HEX_DIGIT{4})
-    | ("U" ~ ASCII_HEX_DIGIT{8})
-}
+number_literal = { number }
 
 number = @{ ("+" | "-")? ~ (hex | oct | dec | nan | inf)}
 hex    = @{ "0" ~ ("x" | "X") ~ ASCII_HEX_DIGIT+ }
@@ -357,6 +53,20 @@ int    = @{ "0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
 exp    = @{ ("E" | "e") ~ ("+" | "-")? ~ ASCII_DIGIT+ }
 nan    = @{ ("N" | "n") ~ ("A" | "a") ~ ("N" | "n") }
 inf    = @{ ("I" | "i") ~ ("N" | "n") ~ ("F" | "f") }
+
+string_literal = { string }
+
+string        = @{ double_quoted | single_quoted }
+double_quoted = @{ "\"" ~ ((!("\"" | "\\") ~ ANY) | escape)* ~ "\"" }
+single_quoted = @{ "'" ~ ((!("'" | "\\") ~ ANY) | escape)* ~ "'" }
+
+escape  = @{ "\\" ~ ("\\" | "\"" | "'" | "/" | "a" | "b" | "f" | "n" | "r" | "t" | "v" | unicode) }
+unicode = @{
+    ('0'..'7'{3})
+    | ("x" ~ ASCII_HEX_DIGIT{2})
+    | ("u" ~ ASCII_HEX_DIGIT{4})
+    | ("U" ~ ASCII_HEX_DIGIT{8})
+}
 
 identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
