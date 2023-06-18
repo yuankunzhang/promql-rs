@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::parser::*;
+use std::str::FromStr;
 
 macro_rules! number_literal {
     ($value:expr) => {
@@ -7,10 +8,27 @@ macro_rules! number_literal {
     };
 }
 
-macro_rules! _string_literal {
+macro_rules! string_literal {
     ($value:expr) => {
         Expr::StringLiteral(StringLiteral {
             value: $value.to_string(),
+        })
+    };
+}
+
+macro_rules! unary_expr {
+    ($op:expr, $rhs:expr) => {
+        Expr::UnaryExpr(UnaryExpr {
+            op: UnaryOp::from_str($op).unwrap(),
+            rhs: Box::new($rhs),
+        })
+    };
+}
+
+macro_rules! paren_expr {
+    ($expr:expr) => {
+        Expr::ParenExpr(ParenExpr {
+            expr: Box::new($expr),
         })
     };
 }
@@ -24,8 +42,15 @@ fn assert_parse_inner(a: Expr, b: Expr) {
         (Expr::NumberLiteral(a), Expr::NumberLiteral(b)) => {
             assert_eq!(a.value, b.value);
         }
+        (Expr::ParenExpr(a), Expr::ParenExpr(b)) => {
+            assert_parse_inner(*a.expr, *b.expr);
+        }
         (Expr::StringLiteral(a), Expr::StringLiteral(b)) => {
             assert_eq!(a.value, b.value);
+        }
+        (Expr::UnaryExpr(a), Expr::UnaryExpr(b)) => {
+            assert_eq!(a.op, b.op);
+            assert_parse_inner(*a.rhs, *b.rhs);
         }
         _ => panic!("Expressions do not match"),
     }
@@ -60,8 +85,17 @@ fn parse_number_literals() {
 
 #[test]
 fn parse_string_literals() {
-    assert_parse(r#""""#, _string_literal!(r#""#));
-    assert_parse(r#""foo""#, _string_literal!(r#"foo"#));
-    assert_parse(r#""foo \"bar\"""#, _string_literal!(r#"foo "bar""#));
-    assert_parse(r#"'foo \"bar\"'"#, _string_literal!(r#"foo "bar""#));
+    assert_parse(r#""""#, string_literal!(r#""#));
+    assert_parse(r#""foo""#, string_literal!(r#"foo"#));
+    assert_parse(r#""foo \"bar\"""#, string_literal!(r#"foo "bar""#));
+    assert_parse(r#"'foo \"bar\"'"#, string_literal!(r#"foo "bar""#));
+}
+
+#[test]
+fn parse_unary_exprs() {
+    assert_parse("-(1)", unary_expr!("-", paren_expr!(number_literal!(1.0))));
+    assert_parse(
+        "--(1)",
+        unary_expr!("-", unary_expr!("-", paren_expr!(number_literal!(1.0)))),
+    );
 }
