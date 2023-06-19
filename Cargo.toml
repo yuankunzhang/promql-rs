@@ -1,7 +1,16 @@
 [package]
 name = "promql-rs"
+description = "A PromQL parser"
 version = "0.1.0"
 edition = "2021"
+authors = ["Yuankun Zhang <fmcocoa@gmail.com>"]
+homepage = "https://github.com/yuankunzhang/promql-rs"
+repository = "https://github.com/yuankunzhang/promql-rs"
+documentation = "https://github.com/yuankunzhang/promql-rs"
+keywords = ["promql", "parser", "pest", "peg", "grammar"]
+categories = ["parsing"]
+license = "MIT/Apache-2.0"
+readme = "README.md"
 
 [lib]
 doctest = false
