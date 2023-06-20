@@ -205,11 +205,24 @@ fn parse_infix(
     op: Pair<Rule>,
     rhs: Result<Expr, ParseError>,
 ) -> Result<Expr, ParseError> {
-    println!(
-        "parse_infix:\nlhs: {:#?}\nop: {:#?}\nrhs: {:#?}",
-        lhs, op, rhs
-    );
-    unreachable!();
+    let mut pairs = op.into_inner();
+    let op = BinaryOp::from_str(pairs.next().unwrap().as_str())?;
+    let return_bool = if pairs.peek().is_some() {
+        pairs.next().unwrap().into_inner().next().unwrap().as_str() == "bool"
+    } else {
+        false
+    };
+
+    Ok(Expr::BinaryExpr(BinaryExpr {
+        op,
+        lhs: Box::new(lhs?),
+        rhs: Box::new(rhs?),
+        return_bool,
+        vector_matching: VectorMatching {
+            cardinality: VectorMatchCardinality::OneToOne,
+            grouping: VectorMatchGrouping::None,
+        },
+    }))
 }
 
 fn parse_at_modifier(pair: Pair<Rule>) -> Result<AtModifier, ParseError> {

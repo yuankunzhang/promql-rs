@@ -15,6 +15,33 @@ macro_rules! aggregate_expr {
     };
 }
 
+macro_rules! binary_expr {
+    ($op:expr, $lhs:expr, $rhs:expr) => {
+        Expr::BinaryExpr(BinaryExpr {
+            op: BinaryOp::from_str($op).unwrap(),
+            lhs: Box::new($lhs),
+            rhs: Box::new($rhs),
+            return_bool: false,
+            vector_matching: VectorMatching {
+                cardinality: VectorMatchCardinality::OneToOne,
+                grouping: VectorMatchGrouping::None,
+            },
+        })
+    };
+    ($op:expr, $return_bool:expr, $lhs:expr, $rhs:expr) => {
+        Expr::BinaryExpr(BinaryExpr {
+            op: BinaryOp::from_str($op).unwrap(),
+            lhs: Box::new($lhs),
+            rhs: Box::new($rhs),
+            return_bool: $return_bool,
+            vector_matching: VectorMatching {
+                cardinality: VectorMatchCardinality::OneToOne,
+                grouping: VectorMatchGrouping::None,
+            },
+        })
+    };
+}
+
 macro_rules! function_call {
     ($name:expr $(, $arg:expr)*) => {
         Expr::FunctionCall(FunctionCall {
@@ -121,6 +148,12 @@ fn assert_parse_inner(a: Expr, b: Expr) {
             assert_eq!(a.modifier, b.modifier);
             assert_parse_inner(*a.expr, *b.expr);
         }
+        (Expr::BinaryExpr(a), Expr::BinaryExpr(b)) => {
+            assert_eq!(a.op, b.op);
+            assert_eq!(a.return_bool, b.return_bool);
+            assert_parse_inner(*a.lhs, *b.lhs);
+            assert_parse_inner(*a.rhs, *b.rhs);
+        }
         (Expr::FunctionCall(a), Expr::FunctionCall(b)) => {
             assert_eq!(a.func.name, b.func.name);
             assert_eq!(a.args.len(), b.args.len());
@@ -197,6 +230,104 @@ fn parse_at_exprs() {
     assert_parse(
         "http_requests_total @ end()",
         vector_selector!("http_requests_total", 0, AtModifier::End),
+    );
+}
+
+#[test]
+fn parse_binary_exprs() {
+    assert_parse(
+        "1 + 2",
+        binary_expr!("+", number_literal!(1.0), number_literal!(2.0)),
+    );
+
+    assert_parse(
+        "1 - 2",
+        binary_expr!("-", number_literal!(1.0), number_literal!(2.0)),
+    );
+
+    assert_parse(
+        "-1 * -2",
+        binary_expr!("*", number_literal!(-1.0), number_literal!(-2.0)),
+    );
+
+    assert_parse(
+        "-1 / -2",
+        binary_expr!("/", number_literal!(-1.0), number_literal!(-2.0)),
+    );
+
+    assert_parse(
+        "1 % 2",
+        binary_expr!("%", number_literal!(1.0), number_literal!(2.0)),
+    );
+
+    assert_parse(
+        "1 == bool 2",
+        binary_expr!("==", true, number_literal!(1.0), number_literal!(2.0)),
+    );
+
+    assert_parse(
+        "1 != bool 2",
+        binary_expr!("!=", true, number_literal!(1.0), number_literal!(2.0)),
+    );
+
+    assert_parse(
+        "1 > bool 2",
+        binary_expr!(">", true, number_literal!(1.0), number_literal!(2.0)),
+    );
+
+    assert_parse(
+        "1 >= bool 2",
+        binary_expr!(">=", true, number_literal!(1.0), number_literal!(2.0)),
+    );
+
+    assert_parse(
+        "1 < bool 2",
+        binary_expr!("<", true, number_literal!(1.0), number_literal!(2.0)),
+    );
+
+    assert_parse(
+        "1 <= bool 2",
+        binary_expr!("<=", true, number_literal!(1.0), number_literal!(2.0)),
+    );
+
+    assert_parse(
+        "+1 + -2 * 1",
+        binary_expr!(
+            "+",
+            number_literal!(1.0),
+            binary_expr!("*", number_literal!(-2.0), number_literal!(1.0))
+        ),
+    );
+
+    assert_parse(
+        "1 + 2/(3*1)",
+        binary_expr!(
+            "+",
+            number_literal!(1.0),
+            binary_expr!(
+                "/",
+                number_literal!(2.0),
+                paren_expr!(binary_expr!(
+                    "*",
+                    number_literal!(3.0),
+                    number_literal!(1.0)
+                ))
+            )
+        ),
+    );
+
+    assert_parse(
+        "1 < bool 2 - 1 * 2",
+        binary_expr!(
+            "<",
+            true,
+            number_literal!(1.0),
+            binary_expr!(
+                "-",
+                number_literal!(2.0),
+                binary_expr!("*", number_literal!(1.0), number_literal!(2.0))
+            )
+        ),
     );
 }
 
@@ -278,9 +409,26 @@ fn parse_subquery_exprs() {
 #[test]
 fn parse_unary_exprs() {
     assert_parse("-(1)", unary_expr!("-", paren_expr!(number_literal!(1.0))));
+
     assert_parse(
         "--(1)",
         unary_expr!("-", unary_expr!("-", paren_expr!(number_literal!(1.0)))),
+    );
+
+    assert_parse(
+        "-1^2",
+        unary_expr!(
+            "-",
+            binary_expr!("^", number_literal!(1.0), number_literal!(2.0))
+        ),
+    );
+
+    assert_parse(
+        "-1^-2",
+        unary_expr!(
+            "-",
+            binary_expr!("^", number_literal!(1.0), number_literal!(-2.0))
+        ),
     );
 }
 
