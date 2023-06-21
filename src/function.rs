@@ -1,11 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ValueType {
-    None,
-    Vector,
-    Scalar,
-    Matrix,
-    String,
-}
+use crate::ast::*;
 
 #[derive(Debug)]
 pub struct Function {

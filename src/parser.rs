@@ -205,14 +205,10 @@ fn parse_infix(
     op: Pair<Rule>,
     rhs: Result<Expr, ParseError>,
 ) -> Result<Expr, ParseError> {
-    println!("lhs: {:#?}\nop: {:#?}\nrhs: {:#?}", lhs, op, rhs);
     let mut pairs = op.into_inner();
     let op = BinaryOp::from_str(pairs.next().unwrap().as_str())?;
     let mut return_bool = false;
-    let mut vector_matching: VectorMatching = VectorMatching {
-        cardinality: VectorMatchCardinality::OneToOne,
-        grouping: VectorMatchGrouping::None,
-    };
+    let mut vector_matching: VectorMatching = VectorMatching::default();
 
     if let Some(pair) = pairs.next() {
         let mut pairs = pair.into_inner();

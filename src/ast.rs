@@ -2,6 +2,7 @@ use std::{str::FromStr, time::Duration};
 
 use crate::function::*;
 
+/// The enumaration of all expression types.
 #[derive(Debug)]
 pub enum Expr {
     AggregateExpr(AggregateExpr),
@@ -17,6 +18,14 @@ pub enum Expr {
 }
 
 impl Expr {
+    /// Returns the [`ValueType`] that the expression evaluates to. Normally,
+    /// an expression evaluates to a fixed value type. However, in the case of
+    /// [`BinaryExpr`], the value type depends on the value types of its two
+    /// operands. If both operands are scalars, the expression evaluates to a
+    /// scalar. Otherwise, it evaluates to a vector.
+    ///
+    /// For more information, see
+    /// <https://prometheus.io/docs/prometheus/latest/querying/basics/#expression-types>.
     pub fn get_type(&self) -> ValueType {
         match self {
             Expr::AggregateExpr(_) => ValueType::Vector,
@@ -39,19 +48,47 @@ impl Expr {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ValueType {
+    /// A set of time series containing a single sample for each time series,
+    /// all sharing the same timestamp.
+    Vector,
+    /// Also called a range vector, a set of time series containing a range of
+    /// data points over time for each time series.
+    Matrix,
+    /// A simple numeric floating point value.
+    Scalar,
+    /// A simple string value.
+    String,
+}
+
+/// Aggregation operators can be used to aggregate the elements of a single
+/// vector, resulting in a new vector of fewer elements with aggregated values.
 #[derive(Debug, PartialEq)]
 pub enum AggregateOp {
+    /// Calculate the average over dimensions.
     Avg,
+    /// Smallest k elements by sample value.
     Bottomk,
+    /// Count number of elements in the vector.
     Count,
+    /// Count number of elements with the same value.
     CountValues,
+    /// All values in the resulting vector are 1.
     Group,
+    /// Select maximum over dimensions.
     Max,
+    /// Select minimum over dimensions.
     Min,
+    /// Calculate polulation standard deviation over dimensions.
     Stddev,
+    /// Calculate population sstandard variance over dimensions.
     Stdvar,
+    /// Calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions.
     Quantile,
+    /// Calculate sum over dimensions.
     Sum,
+    /// Largest k elements by sample value.
     Topk,
 }
 
@@ -77,39 +114,79 @@ impl FromStr for AggregateOp {
     }
 }
 
+/// The aggregation modifier can be used to indicate the aggregation operators
+/// to use or exclude certain dimensions.
 #[derive(Debug, PartialEq)]
 pub enum AggregateModifier {
     None,
+    /// The `by` modifier drops labels that are not listed.
     By(Vec<String>),
+    /// The `without` modifier removes the listed labels from the result vector.
+    /// All other labels are preserved.
     Without(Vec<String>),
 }
 
-/// AggregateExpr represents an aggregation operation over a vector.
+impl Default for AggregateModifier {
+    fn default() -> Self {
+        AggregateModifier::None
+    }
+}
+
+impl AggregateModifier {
+    pub fn from_str_and_vec(s: &str, v: Vec<String>) -> Result<Self, String> {
+        match s {
+            "by" => Ok(AggregateModifier::By(v)),
+            "without" => Ok(AggregateModifier::Without(v)),
+            _ => Err(format!("Unknown aggregate modifier: {}", s)),
+        }
+    }
+}
+
+/// An aggregation expression.
 #[derive(Debug)]
 pub struct AggregateExpr {
     pub op: AggregateOp,
     pub expr: Box<Expr>,
+    /// The `param` is only required for `count_values`, `quantile`, `topk`,
+    /// and `bottomk`.
     pub param: Option<Box<Expr>>,
     pub modifier: AggregateModifier,
 }
 
+/// Binary operators can do logical and arithmetic operations or comparisons.
 #[derive(Debug, PartialEq)]
 pub enum BinaryOp {
+    /// Addition.
     Add,
+    /// Subtraction.
     Sub,
+    /// Multiplication.
     Mul,
+    /// Division.
     Div,
+    /// Modulo.
     Mod,
+    /// Exponentiation.
     Pow,
+    /// Equal.
     Eq,
+    /// Not equal.
     Ne,
+    /// Greater than.
     Gt,
+    /// Less than.
     Lt,
+    /// Greater than or equal.
     Ge,
+    /// Less than or equal.
     Le,
+    /// Logical and (intersection).
     And,
+    /// Logical or (union).
     Or,
+    /// Logical unless (complement).
     Unless,
+    /// Arc tangent.
     Atan2,
 }
 
@@ -139,6 +216,8 @@ impl FromStr for BinaryOp {
     }
 }
 
+/// Describes the cardinality relashionship of two vectors in a binary
+/// operation.
 #[derive(Debug, PartialEq)]
 pub enum VectorMatchCardinality {
     OneToOne,
@@ -147,6 +226,23 @@ pub enum VectorMatchCardinality {
     ManyToMany,
 }
 
+impl Default for VectorMatchCardinality {
+    fn default() -> Self {
+        VectorMatchCardinality::OneToOne
+    }
+}
+
+impl VectorMatchCardinality {
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "group_right" => Ok(VectorMatchCardinality::OneToMany),
+            "group_left" => Ok(VectorMatchCardinality::ManyToOne),
+            _ => Err(format!("Unknown vector match cardinality: {}", s)),
+        }
+    }
+}
+
+/// Describes how two vectors in a binary operation are supposed to be grouped.
 #[derive(Debug, PartialEq)]
 pub enum VectorMatchGrouping {
     None,
@@ -154,30 +250,61 @@ pub enum VectorMatchGrouping {
     Ignoring(Vec<String>),
 }
 
+impl Default for VectorMatchGrouping {
+    fn default() -> Self {
+        VectorMatchGrouping::None
+    }
+}
+
+impl VectorMatchGrouping {
+    pub fn from_str_and_vec(s: &str, v: Vec<String>) -> Result<Self, String> {
+        match s {
+            "on" => Ok(VectorMatchGrouping::On(v)),
+            "ignoring" => Ok(VectorMatchGrouping::Ignoring(v)),
+            _ => Err(format!("Unknown vector match grouping: {}", s)),
+        }
+    }
+}
+
+/// describes how elements from two vectors in a binary operation are supposed
+/// to be matched.
 #[derive(Debug, PartialEq)]
 pub struct VectorMatching {
     pub cardinality: VectorMatchCardinality,
     pub grouping: VectorMatchGrouping,
+    pub include: Vec<String>,
 }
 
-/// BinaryExpr represents a binary operation between two expressions.
+impl Default for VectorMatching {
+    fn default() -> Self {
+        VectorMatching {
+            cardinality: VectorMatchCardinality::default(),
+            grouping: VectorMatchGrouping::default(),
+            include: Vec::new(),
+        }
+    }
+}
+
+/// A binary expression.
 #[derive(Debug)]
 pub struct BinaryExpr {
     pub op: BinaryOp,
     pub lhs: Box<Expr>,
     pub rhs: Box<Expr>,
+    /// If a comparison operator, return `0` or `1` rather than filtering.
     pub return_bool: bool,
+    /// The matching behavior for the oepration if both operands are vectors.
     pub vector_matching: VectorMatching,
 }
 
-/// FunctionCall represents a function call.
+/// A function call expression.
 #[derive(Debug)]
 pub struct FunctionCall {
     pub func: &'static Function,
     pub args: Vec<Expr>,
 }
 
-/// MatrixSelector represents a matrix selection.
+/// A matrix selector expression.
 #[derive(Debug)]
 pub struct MatrixSelector {
     pub vector_selector: Box<Expr>,

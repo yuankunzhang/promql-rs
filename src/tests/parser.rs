@@ -18,28 +18,10 @@ macro_rules! aggregate_expr {
 
 macro_rules! binary_expr {
     ($op:expr, $lhs:expr, $rhs:expr) => {
-        binary_expr!(
-            $op,
-            false,
-            $lhs,
-            $rhs,
-            VectorMatching {
-                cardinality: VectorMatchCardinality::OneToOne,
-                grouping: VectorMatchGrouping::None,
-            }
-        )
+        binary_expr!($op, false, $lhs, $rhs, VectorMatching::default())
     };
     ($op:expr, $return_bool:expr, $lhs:expr, $rhs:expr) => {
-        binary_expr!(
-            $op,
-            $return_bool,
-            $lhs,
-            $rhs,
-            VectorMatching {
-                cardinality: VectorMatchCardinality::OneToOne,
-                grouping: VectorMatchGrouping::None,
-            }
-        )
+        binary_expr!($op, $return_bool, $lhs, $rhs, VectorMatching::default())
     };
     ($op:expr, $return_bool:expr, $lhs:expr, $rhs:expr, $vector_matching:expr) => {
         Expr::BinaryExpr(BinaryExpr {
@@ -152,12 +134,14 @@ macro_rules! vector_matching {
         VectorMatching {
             cardinality: VectorMatchCardinality::$card,
             grouping: VectorMatchGrouping::$group(vec![$($label.to_string()),*]),
+            include: vec![],
         }
     };
     ($card:ident) => {
         VectorMatching {
             cardinality: VectorMatchCardinality::$card,
             grouping: VectorMatchGrouping::None,
+            include: vec![],
         }
     };
 }
