@@ -3,6 +3,7 @@ use crate::function::FUNCTIONS;
 use crate::parser::*;
 use std::str::FromStr;
 use std::time::Duration;
+use std::vec;
 
 macro_rules! aggregate_expr {
     ($op:expr, $modifier:expr, $param:expr, $expr:expr) => {
@@ -17,27 +18,36 @@ macro_rules! aggregate_expr {
 
 macro_rules! binary_expr {
     ($op:expr, $lhs:expr, $rhs:expr) => {
-        Expr::BinaryExpr(BinaryExpr {
-            op: BinaryOp::from_str($op).unwrap(),
-            lhs: Box::new($lhs),
-            rhs: Box::new($rhs),
-            return_bool: false,
-            vector_matching: VectorMatching {
+        binary_expr!(
+            $op,
+            false,
+            $lhs,
+            $rhs,
+            VectorMatching {
                 cardinality: VectorMatchCardinality::OneToOne,
                 grouping: VectorMatchGrouping::None,
-            },
-        })
+            }
+        )
     };
     ($op:expr, $return_bool:expr, $lhs:expr, $rhs:expr) => {
+        binary_expr!(
+            $op,
+            $return_bool,
+            $lhs,
+            $rhs,
+            VectorMatching {
+                cardinality: VectorMatchCardinality::OneToOne,
+                grouping: VectorMatchGrouping::None,
+            }
+        )
+    };
+    ($op:expr, $return_bool:expr, $lhs:expr, $rhs:expr, $vector_matching:expr) => {
         Expr::BinaryExpr(BinaryExpr {
             op: BinaryOp::from_str($op).unwrap(),
             lhs: Box::new($lhs),
             rhs: Box::new($rhs),
             return_bool: $return_bool,
-            vector_matching: VectorMatching {
-                cardinality: VectorMatchCardinality::OneToOne,
-                grouping: VectorMatchGrouping::None,
-            },
+            vector_matching: $vector_matching,
         })
     };
 }
@@ -137,6 +147,21 @@ macro_rules! vector_selector {
     };
 }
 
+macro_rules! vector_matching {
+    ($card:ident, $group:ident $(, $label:expr)*) => {
+        VectorMatching {
+            cardinality: VectorMatchCardinality::$card,
+            grouping: VectorMatchGrouping::$group(vec![$($label.to_string()),*]),
+        }
+    };
+    ($card:ident) => {
+        VectorMatching {
+            cardinality: VectorMatchCardinality::$card,
+            grouping: VectorMatchGrouping::None,
+        }
+    };
+}
+
 fn assert_parse(s: &str, e: Expr) {
     assert_parse_inner(parse(s).unwrap(), e);
 }
@@ -151,6 +176,7 @@ fn assert_parse_inner(a: Expr, b: Expr) {
         (Expr::BinaryExpr(a), Expr::BinaryExpr(b)) => {
             assert_eq!(a.op, b.op);
             assert_eq!(a.return_bool, b.return_bool);
+            assert_eq!(a.vector_matching, b.vector_matching);
             assert_parse_inner(*a.lhs, *b.lhs);
             assert_parse_inner(*a.rhs, *b.rhs);
         }
@@ -329,6 +355,130 @@ fn parse_binary_exprs() {
             )
         ),
     );
+
+    assert_parse(
+        "foo * bar",
+        binary_expr!("*", vector_selector!("foo"), vector_selector!("bar")),
+    );
+
+    assert_parse(
+        "foo == bool 1",
+        binary_expr!("==", true, vector_selector!("foo"), number_literal!(1.0)),
+    );
+
+    assert_parse(
+        "2.5 / bar",
+        binary_expr!("/", number_literal!(2.5), vector_selector!("bar")),
+    );
+
+    assert_parse(
+        "foo and bar",
+        binary_expr!("and", vector_selector!("foo"), vector_selector!("bar")),
+    );
+
+    assert_parse(
+        "foo or bar",
+        binary_expr!("or", vector_selector!("foo"), vector_selector!("bar")),
+    );
+
+    assert_parse(
+        "foo unless bar",
+        binary_expr!("unless", vector_selector!("foo"), vector_selector!("bar")),
+    );
+
+    assert_parse(
+        "foo + bar or bla and blub",
+        binary_expr!(
+            "or",
+            binary_expr!("+", vector_selector!("foo"), vector_selector!("bar")),
+            binary_expr!("and", vector_selector!("bla"), vector_selector!("blub"))
+        ),
+    );
+
+    assert_parse(
+        "foo and bar unless baz or qux",
+        binary_expr!(
+            "or",
+            binary_expr!(
+                "unless",
+                binary_expr!("and", vector_selector!("foo"), vector_selector!("bar")),
+                vector_selector!("baz")
+            ),
+            vector_selector!("qux")
+        ),
+    );
+
+    assert_parse(
+        "bar + on(foo) bla / on(baz, buz) group_right(test) blub",
+        binary_expr!(
+            "+",
+            false,
+            vector_selector!("bar"),
+            binary_expr!(
+                "/",
+                false,
+                vector_selector!("bla"),
+                vector_selector!("blub"),
+                vector_matching!(ManyToOne, On, "baz", "buz")
+            ),
+            vector_matching!(OneToOne, On, "foo")
+        ),
+    );
+
+    assert_parse(
+        "foo and on() bar",
+        binary_expr!(
+            "and",
+            false,
+            vector_selector!("foo"),
+            vector_selector!("bar"),
+            vector_matching!(OneToOne, On)
+        ),
+    );
+
+    assert_parse(
+        "foo and ignoring(test,blub) bar",
+        binary_expr!(
+            "and",
+            false,
+            vector_selector!("foo"),
+            vector_selector!("bar"),
+            vector_matching!(OneToOne, Ignoring, "test", "blub")
+        ),
+    );
+
+    assert_parse(
+        "foo and ignoring() bar",
+        binary_expr!(
+            "and",
+            false,
+            vector_selector!("foo"),
+            vector_selector!("bar"),
+            vector_matching!(OneToOne, Ignoring)
+        ),
+    );
+
+    assert_parse(
+        "foo unless on(bar) baz",
+        binary_expr!(
+            "unless",
+            false,
+            vector_selector!("foo"),
+            vector_selector!("baz"),
+            vector_matching!(OneToOne, On, "bar")
+        ),
+    );
+
+    assert_parse(
+        "foo / on(test,blub) group_left(bar) bar",
+        binary_expr!(
+            "/",
+            false,
+            vector_selector!("foo"),
+            vector_selector!("bar"),
+            vector_matching!(OneToMany, On, "test", "blub")
+        ),
+    );
 }
 
 #[test]
@@ -429,6 +579,16 @@ fn parse_unary_exprs() {
             "-",
             binary_expr!("^", number_literal!(1.0), number_literal!(-2.0))
         ),
+    );
+
+    assert_parse(
+        "-some_metric",
+        unary_expr!("-", vector_selector!("some_metric")),
+    );
+
+    assert_parse(
+        "+some_metric",
+        unary_expr!("+", vector_selector!("some_metric")),
     );
 }
 

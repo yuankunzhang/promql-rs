@@ -139,7 +139,7 @@ impl FromStr for BinaryOp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum VectorMatchCardinality {
     OneToOne,
     OneToMany,
@@ -147,14 +147,14 @@ pub enum VectorMatchCardinality {
     ManyToMany,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum VectorMatchGrouping {
     None,
     On(Vec<String>),
     Ignoring(Vec<String>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct VectorMatching {
     pub cardinality: VectorMatchCardinality,
     pub grouping: VectorMatchGrouping,

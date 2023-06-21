@@ -205,23 +205,42 @@ fn parse_infix(
     op: Pair<Rule>,
     rhs: Result<Expr, ParseError>,
 ) -> Result<Expr, ParseError> {
+    println!("lhs: {:#?}\nop: {:#?}\nrhs: {:#?}", lhs, op, rhs);
     let mut pairs = op.into_inner();
     let op = BinaryOp::from_str(pairs.next().unwrap().as_str())?;
-    let return_bool = if pairs.peek().is_some() {
-        pairs.next().unwrap().into_inner().next().unwrap().as_str() == "bool"
-    } else {
-        false
+    let mut return_bool = false;
+    let mut vector_matching: VectorMatching = VectorMatching {
+        cardinality: VectorMatchCardinality::OneToOne,
+        grouping: VectorMatchGrouping::None,
     };
+
+    if let Some(pair) = pairs.next() {
+        let mut pairs = pair.into_inner();
+
+        if let Rule::bool_modifier = pairs.peek().unwrap().as_rule() {
+            return_bool = true;
+            pairs.next();
+        }
+
+        while let Some(pair) = pairs.next() {
+            match pair.as_rule() {
+                Rule::on_or_ignoring_modifier => {
+                    vector_matching.grouping = parse_on_or_ignoring_modifier(pair)?
+                }
+                Rule::left_or_right_modifier => {
+                    vector_matching.cardinality = parse_left_or_right_modifier(pair)?
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
 
     Ok(Expr::BinaryExpr(BinaryExpr {
         op,
         lhs: Box::new(lhs?),
         rhs: Box::new(rhs?),
         return_bool,
-        vector_matching: VectorMatching {
-            cardinality: VectorMatchCardinality::OneToOne,
-            grouping: VectorMatchGrouping::None,
-        },
+        vector_matching,
     }))
 }
 
@@ -275,6 +294,26 @@ fn parse_duration(pair: Pair<Rule>) -> Result<Duration, ParseError> {
     }
 
     Ok(duration)
+}
+
+fn parse_on_or_ignoring_modifier(pair: Pair<Rule>) -> Result<VectorMatchGrouping, ParseError> {
+    let mut pairs = pair.into_inner();
+    let modifier = pairs.next().unwrap();
+    let labels: Vec<_> = pairs.map(|s| s.as_str().to_string()).collect();
+    match modifier.as_str() {
+        "on" => Ok(VectorMatchGrouping::On(labels)),
+        "ignoring" => Ok(VectorMatchGrouping::Ignoring(labels)),
+        _ => Ok(VectorMatchGrouping::None),
+    }
+}
+
+fn parse_left_or_right_modifier(pair: Pair<Rule>) -> Result<VectorMatchCardinality, ParseError> {
+    let modifier = pair.into_inner().next().unwrap();
+    match modifier.as_str() {
+        "group_left" => Ok(VectorMatchCardinality::OneToMany),
+        "group_right" => Ok(VectorMatchCardinality::ManyToOne),
+        _ => unreachable!(),
+    }
 }
 
 fn parse_aggregate_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
