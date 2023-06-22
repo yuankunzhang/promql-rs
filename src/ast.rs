@@ -48,6 +48,7 @@ impl Expr {
     }
 }
 
+/// The enumaration of all value types.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValueType {
     /// A set of time series containing a single sample for each time series,
@@ -266,7 +267,7 @@ impl VectorMatchGrouping {
     }
 }
 
-/// describes how elements from two vectors in a binary operation are supposed
+/// Describes how elements from two vectors in a binary operation are supposed
 /// to be matched.
 #[derive(Debug, PartialEq)]
 pub struct VectorMatching {
@@ -311,6 +312,9 @@ pub struct MatrixSelector {
     pub range: Duration,
 }
 
+/// The `@` modifier allows changing the evaluation time for individual instant
+/// and range vectors in a query. The time supplied is a UNIX timestamp or
+/// `start()`/`end()`.
 #[derive(Debug, PartialEq)]
 pub enum AtModifier {
     None,
@@ -319,7 +323,7 @@ pub enum AtModifier {
     Timestamp(u64),
 }
 
-/// SubqueryExpr represents a subquery expression.
+/// A subquery expression.
 #[derive(Debug)]
 pub struct SubqueryExpr {
     pub expr: Box<Expr>,
@@ -330,29 +334,13 @@ pub struct SubqueryExpr {
 }
 
 /// Number literals can be written as literal integer (octal, decimal, or
-/// hexadecimal) or floating-point numbers in the format:
-///
-/// [-+]?(
-///       [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
-///     | 0[xX][0-9a-fA-F]+
-///     | [nN][aA][nN]
-///     | [iI][nN][fF]
-/// )
-///
-/// Examples:
-///
-///     23
-///     -2.43
-///     3.4e-9
-///     0x8f
-///     -Inf
-///     NaN
+/// hexadecimal) or floating-point numbers.
 #[derive(Debug)]
 pub struct NumberLiteral {
     pub value: f64,
 }
 
-/// ParenExpr represents an expression wrapped in parentheses.
+/// A paren expression.
 #[derive(Debug)]
 pub struct ParenExpr {
     pub expr: Box<Expr>,
@@ -363,16 +351,12 @@ pub struct ParenExpr {
 /// In single or double quotes a backslash begins an escape sequence, which may
 /// be followed by a, b, f, n, r, t, v or \. Specific characters can be provided
 /// using octal (\nnn) or hexadecimal (\xnn, \unnnn and \Unnnnnnnn).
-///
-/// Example:
-///
-///     "this is a string"
-///     'these are unescaped: \n \\ \t'
 #[derive(Debug)]
 pub struct StringLiteral {
     pub value: String,
 }
 
+/// Unary operators.
 #[derive(Debug, PartialEq)]
 pub enum UnaryOp {
     Pos,
@@ -391,13 +375,15 @@ impl FromStr for UnaryOp {
     }
 }
 
-/// UnaryExpr represents a unary operation.
+/// An unary expression. Unary operations are only supported for scalars.
 #[derive(Debug)]
 pub struct UnaryExpr {
     pub op: UnaryOp,
     pub rhs: Box<Expr>,
 }
 
+/// Match operators are used to compare a label value in a selector with a
+/// literal value or a regular expression.
 #[derive(Debug, PartialEq)]
 pub enum MatchOp {
     Equal,
@@ -420,6 +406,7 @@ impl FromStr for MatchOp {
     }
 }
 
+/// The matching of a label.
 #[derive(Debug, PartialEq)]
 pub struct LabelMatcher {
     pub op: MatchOp,
@@ -427,7 +414,7 @@ pub struct LabelMatcher {
     pub value: String,
 }
 
-/// VectorSelector represents a vector selection.
+/// A vector selector expression.
 #[derive(Debug)]
 pub struct VectorSelector {
     pub metric: String,

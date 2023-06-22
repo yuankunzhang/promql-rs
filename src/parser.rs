@@ -50,6 +50,7 @@ lazy_static::lazy_static! {
     };
 }
 
+/// ParseError represents an error that occurred during parsing.
 #[derive(Debug)]
 pub struct ParseError {
     pub message: String,
@@ -92,6 +93,7 @@ impl From<&str> for ParseError {
     }
 }
 
+/// Parse a PromQL expression.
 pub fn parse(promql: &str) -> Result<Expr, ParseError> {
     let mut pairs = PromQLParser::parse(Rule::promql, promql)?;
     Ok(parse_expr(pairs.next().unwrap())?)
