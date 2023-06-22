@@ -1,7 +1,7 @@
 [package]
 name = "promql-rs"
 description = "A PromQL parser"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Yuankun Zhang <fmcocoa@gmail.com>"]
 homepage = "https://github.com/yuankunzhang/promql-rs"
