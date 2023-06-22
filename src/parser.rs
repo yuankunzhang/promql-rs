@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::function::FUNCTIONS;
-use pest::iterators::Pair;
+use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc::*, Op, PrattParser};
 use pest::Parser;
 use pest_derive::Parser;
@@ -96,7 +96,7 @@ impl From<&str> for ParseError {
 /// Parse a PromQL expression.
 pub fn parse(promql: &str) -> Result<Expr, ParseError> {
     let mut pairs = PromQLParser::parse(Rule::promql, promql)?;
-    Ok(parse_expr(pairs.next().unwrap())?)
+    Ok(parse_expr(next(&mut pairs)?)?)
 }
 
 fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
@@ -107,7 +107,7 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
         Rule::paren_expr => parse_paren_expr(primary),
         Rule::string_literal => parse_string_literal(primary),
         Rule::vector_selector => parse_vector_selector(primary),
-        _ => unreachable!(),
+        _ => Err(unknown()),
     };
 
     let parse_postfix = |lhs: Result<Expr, ParseError>, op: Pair<Rule>| parse_postfix(lhs, op);
@@ -122,78 +122,33 @@ fn parse_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
         .parse(pair.into_inner())
 }
 
+// Parse a postfix operator.
+//
+// Examples:
+// - Matrix:   foo[5m]
+// - Subquery: foo[5m:1m]
+// - Offset:   foo offset 5m
+// - At:       foo at start()
 fn parse_postfix(lhs: Result<Expr, ParseError>, op: Pair<Rule>) -> Result<Expr, ParseError> {
-    let mut expr = lhs?;
+    let expr = lhs?;
 
     match op.as_rule() {
-        Rule::matrix => {
-            let mut pairs = op.into_inner();
-            let range = parse_duration(pairs.next().unwrap())?;
-            Ok(Expr::MatrixSelector(MatrixSelector {
-                vector_selector: Box::new(expr),
-                range,
-            }))
-        }
-        Rule::subquery => {
-            let mut pairs = op.into_inner();
-            let range = parse_duration(pairs.next().unwrap())?;
-            let step = parse_duration(pairs.next().unwrap())?;
-            Ok(Expr::SubqueryExpr(SubqueryExpr {
-                expr: Box::new(expr),
-                at: AtModifier::None,
-                offset: Duration::default(),
-                range,
-                step,
-            }))
-        }
-        Rule::offset => {
-            let offset = parse_duration(op.into_inner().next().unwrap())?;
-            match expr {
-                Expr::VectorSelector(ref mut vs) => {
-                    vs.offset = offset;
-                }
-                Expr::MatrixSelector(ref mut ms) => match ms.vector_selector.as_mut() {
-                    Expr::VectorSelector(ref mut vs) => {
-                        vs.offset = offset;
-                    }
-                    _ => return Err("invalid matrix selector".into()),
-                },
-                Expr::SubqueryExpr(ref mut sq) => {
-                    sq.offset = offset;
-                }
-                _ => return Err("offset modifier must be preceded by an instant vector selector, a range vector selector, or a subquery".into()),
-            }
-            Ok(expr)
-        }
-        Rule::at => {
-            let at_modifier = parse_at_modifier(op.into_inner().next().unwrap())?;
-            match expr {
-                Expr::VectorSelector(ref mut vs) => {
-                    vs.at = at_modifier;
-                }
-                Expr::MatrixSelector(ref mut ms) => match ms.vector_selector.as_mut() {
-                    Expr::VectorSelector(ref mut vs) => {
-                        vs.at = at_modifier;
-                    }
-                    _ => return Err("invalid matrix selector".into()),
-                },
-                Expr::SubqueryExpr(ref mut sq) => {
-                    sq.at = at_modifier;
-                }
-                _ => return Err("@ modifier must be preceded by an instant vector selector, a range vector selector, or a subquery".into()),
-            }
-            Ok(expr)
-        }
-        _ => unreachable!(),
+        Rule::matrix => parse_matrix_selector(expr, op),
+        Rule::subquery => parse_subquery_expr(expr, op),
+        Rule::offset => parse_offset_modifier(expr, op),
+        Rule::at => parse_at_modifier(expr, op),
+        _ => Err(unknown()),
     }
 }
 
+// Parse a unary operator. When the operand is a number literal, the operator is
+// applied to the number literal and the result is returned as number literal.
 fn parse_prefix(op: Pair<Rule>, rhs: Result<Expr, ParseError>) -> Result<Expr, ParseError> {
     match rhs? {
         Expr::NumberLiteral(n) => match op.as_str() {
             "+" => return Ok(Expr::NumberLiteral(NumberLiteral { value: n.value })),
             "-" => return Ok(Expr::NumberLiteral(NumberLiteral { value: -n.value })),
-            _ => unreachable!(),
+            _ => Err(unknown()),
         },
         expr => Ok(Expr::UnaryExpr(UnaryExpr {
             op: UnaryOp::from_str(op.as_str())?,
@@ -208,7 +163,7 @@ fn parse_infix(
     rhs: Result<Expr, ParseError>,
 ) -> Result<Expr, ParseError> {
     let mut pairs = op.into_inner();
-    let op = BinaryOp::from_str(pairs.next().unwrap().as_str())?;
+    let op = BinaryOp::from_str(next(&mut pairs)?.as_str())?;
     let mut return_bool = false;
     let mut vector_matching: VectorMatching = VectorMatching::default();
 
@@ -228,7 +183,7 @@ fn parse_infix(
                 Rule::left_or_right_modifier => {
                     vector_matching.cardinality = parse_left_or_right_modifier(pair)?
                 }
-                _ => unreachable!(),
+                _ => return Err(unknown()),
             }
         }
     }
@@ -242,13 +197,33 @@ fn parse_infix(
     }))
 }
 
-fn parse_at_modifier(pair: Pair<Rule>) -> Result<AtModifier, ParseError> {
-    let value = pair.as_str();
-    match value {
-        "start()" => Ok(AtModifier::Start),
-        "end()" => Ok(AtModifier::End),
-        _ => Ok(AtModifier::Timestamp(value.parse::<u64>().unwrap())),
+fn parse_at_modifier(mut expr: Expr, op: Pair<Rule>) -> Result<Expr, ParseError> {
+    let at = match next(&mut op.into_inner())?.as_str() {
+        "start()" => AtModifier::Start,
+        "end()" => AtModifier::End,
+        value => AtModifier::Timestamp(
+            value
+                .parse::<u64>()
+                .map_err(|_| ParseError::new(format!("Invalid timestamp value: {}", value)))?,
+        ),
+    };
+
+    match expr {
+        Expr::VectorSelector(ref mut vs) => {
+            vs.at = at;
+        }
+        Expr::MatrixSelector(ref mut ms) => match ms.vector_selector.as_mut() {
+            Expr::VectorSelector(ref mut vs) => {
+                vs.at = at;
+            }
+            _ => return Err("invalid matrix selector".into()),
+        },
+        Expr::SubqueryExpr(ref mut sq) => {
+            sq.at = at;
+        }
+        _ => return Err("@ modifier must be preceded by an instant vector selector, a range vector selector, or a subquery".into()),
     }
+    Ok(expr)
 }
 
 fn parse_duration(pair: Pair<Rule>) -> Result<Duration, ParseError> {
@@ -256,30 +231,30 @@ fn parse_duration(pair: Pair<Rule>) -> Result<Duration, ParseError> {
     let mut num = String::new();
     let mut unit = String::new();
 
-    let add_duration = |duration: &mut Duration,
-                        num: &mut String,
-                        unit: &mut String|
-     -> Result<(), Box<dyn std::error::Error>> {
-        let value = num.parse::<u64>().unwrap();
-        match unit.as_str() {
-            "y" => *duration += Duration::from_secs(value * 365 * 24 * 60 * 60),
-            "w" => *duration += Duration::from_secs(value * 7 * 24 * 60 * 60),
-            "d" => *duration += Duration::from_secs(value * 24 * 60 * 60),
-            "h" => *duration += Duration::from_secs(value * 60 * 60),
-            "m" => *duration += Duration::from_secs(value * 60),
-            "s" => *duration += Duration::from_secs(value),
-            "ms" => *duration += Duration::from_millis(value),
-            _ => return Err("unknown duration unit".into()),
-        }
-        unit.clear();
-        num.clear();
-        Ok(())
-    };
+    let add_duration =
+        |duration: &mut Duration, num: &mut String, unit: &mut String| -> Result<(), ParseError> {
+            let value = num
+                .parse::<u64>()
+                .map_err(|_| ParseError::new(format!("Invalid duration value: {}", num)))?;
+            match unit.as_str() {
+                "y" => *duration += Duration::from_secs(value * 365 * 24 * 60 * 60),
+                "w" => *duration += Duration::from_secs(value * 7 * 24 * 60 * 60),
+                "d" => *duration += Duration::from_secs(value * 24 * 60 * 60),
+                "h" => *duration += Duration::from_secs(value * 60 * 60),
+                "m" => *duration += Duration::from_secs(value * 60),
+                "s" => *duration += Duration::from_secs(value),
+                "ms" => *duration += Duration::from_millis(value),
+                _ => return Err("unknown duration unit".into()),
+            }
+            unit.clear();
+            num.clear();
+            Ok(())
+        };
 
     for c in pair.as_str().chars() {
         if c.is_digit(10) {
             if !unit.is_empty() {
-                add_duration(&mut duration, &mut num, &mut unit).unwrap();
+                add_duration(&mut duration, &mut num, &mut unit)?;
             }
             num.push(c);
         } else {
@@ -288,15 +263,44 @@ fn parse_duration(pair: Pair<Rule>) -> Result<Duration, ParseError> {
     }
 
     if !unit.is_empty() {
-        add_duration(&mut duration, &mut num, &mut unit).unwrap();
+        add_duration(&mut duration, &mut num, &mut unit)?;
     }
 
     Ok(duration)
 }
 
+fn parse_left_or_right_modifier(pair: Pair<Rule>) -> Result<VectorMatchCardinality, ParseError> {
+    let modifier = next(&mut pair.into_inner())?;
+    match modifier.as_str() {
+        "group_left" => Ok(VectorMatchCardinality::OneToMany),
+        "group_right" => Ok(VectorMatchCardinality::ManyToOne),
+        _ => Err(unknown()),
+    }
+}
+
+fn parse_offset_modifier(mut expr: Expr, op: Pair<Rule>) -> Result<Expr, ParseError> {
+    let offset = parse_duration(next(&mut op.into_inner())?)?;
+    match expr {
+        Expr::VectorSelector(ref mut vs) => {
+            vs.offset = offset;
+        }
+        Expr::MatrixSelector(ref mut ms) => match ms.vector_selector.as_mut() {
+            Expr::VectorSelector(ref mut vs) => {
+                vs.offset = offset;
+            }
+            _ => return Err("invalid matrix selector".into()),
+        },
+        Expr::SubqueryExpr(ref mut sq) => {
+            sq.offset = offset;
+        }
+        _ => return Err("offset modifier must be preceded by an instant vector selector, a range vector selector, or a subquery".into()),
+    }
+    Ok(expr)
+}
+
 fn parse_on_or_ignoring_modifier(pair: Pair<Rule>) -> Result<VectorMatchGrouping, ParseError> {
     let mut pairs = pair.into_inner();
-    let modifier = pairs.next().unwrap();
+    let modifier = next(&mut pairs)?;
     let labels: Vec<_> = pairs.map(|s| s.as_str().to_string()).collect();
     match modifier.as_str() {
         "on" => Ok(VectorMatchGrouping::On(labels)),
@@ -305,27 +309,18 @@ fn parse_on_or_ignoring_modifier(pair: Pair<Rule>) -> Result<VectorMatchGrouping
     }
 }
 
-fn parse_left_or_right_modifier(pair: Pair<Rule>) -> Result<VectorMatchCardinality, ParseError> {
-    let modifier = pair.into_inner().next().unwrap();
-    match modifier.as_str() {
-        "group_left" => Ok(VectorMatchCardinality::OneToMany),
-        "group_right" => Ok(VectorMatchCardinality::ManyToOne),
-        _ => unreachable!(),
-    }
-}
-
 fn parse_aggregate_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     let mut pairs = pair.into_inner();
-    let op = AggregateOp::from_str(pairs.next().unwrap().as_str())?;
+    let op = AggregateOp::from_str(next(&mut pairs)?.as_str())?;
 
     let mut modifier = match pairs.peek() {
         Some(pair) if pair.as_rule() == Rule::aggregate_modifier => {
-            parse_aggregate_modifier(pairs.next().unwrap())?
+            parse_aggregate_modifier(next(&mut pairs)?)?
         }
         _ => AggregateModifier::None,
     };
 
-    let mut args = parse_function_args(pairs.next().unwrap())?;
+    let mut args = parse_function_args(next(&mut pairs)?)?;
     let expr = args.pop().ok_or("missing expression".to_string())?;
 
     if let Some(pair) = pairs.next() {
@@ -342,25 +337,25 @@ fn parse_aggregate_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
 
 fn parse_aggregate_modifier(pair: Pair<Rule>) -> Result<AggregateModifier, ParseError> {
     let mut pairs = pair.into_inner();
-    let modifier = pairs.next().unwrap();
+    let modifier = next(&mut pairs)?;
     let labels: Vec<_> = pairs.map(|s| s.as_str().to_string()).collect();
     match modifier.as_str() {
         "by" => Ok(AggregateModifier::By(labels)),
         "without" => Ok(AggregateModifier::Without(labels)),
-        _ => unreachable!(),
+        _ => Err(unknown()),
     }
 }
 
 fn parse_function_call(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     let mut pairs = pair.into_inner();
-    let name = pairs.next().unwrap().as_str();
+    let name = next(&mut pairs)?.as_str();
     let func = FUNCTIONS
         .iter()
         .find(|f| f.name == name)
         .ok_or("unknown function name")
         .unwrap();
 
-    let args = parse_function_args(pairs.next().unwrap())?;
+    let args = parse_function_args(next(&mut pairs)?)?;
     // TODO: args validation
     Ok(Expr::FunctionCall(FunctionCall { func, args }))
 }
@@ -369,8 +364,15 @@ fn parse_function_args(pair: Pair<Rule>) -> Result<Vec<Expr>, ParseError> {
     pair.into_inner().map(|expr| parse_expr(expr)).collect()
 }
 
+fn parse_matrix_selector(expr: Expr, op: Pair<Rule>) -> Result<Expr, ParseError> {
+    Ok(Expr::MatrixSelector(MatrixSelector {
+        vector_selector: Box::new(expr),
+        range: parse_duration(next(&mut op.into_inner())?)?,
+    }))
+}
+
 fn parse_number_literal(pair: Pair<Rule>) -> Result<Expr, ParseError> {
-    let s = pair.into_inner().next().unwrap().as_str();
+    let s = next(&mut pair.into_inner())?.as_str();
     match s {
         _ if s.starts_with("0x") => Ok(Expr::NumberLiteral(NumberLiteral {
             value: u64::from_str_radix(&s[2..], 16).unwrap() as f64,
@@ -388,13 +390,24 @@ fn parse_number_literal(pair: Pair<Rule>) -> Result<Expr, ParseError> {
 
 fn parse_paren_expr(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     Ok(Expr::ParenExpr(ParenExpr {
-        expr: Box::new(parse_expr(pair.into_inner().next().unwrap())?),
+        expr: Box::new(parse_expr(next(&mut pair.into_inner())?)?),
     }))
 }
 
 fn parse_string_literal(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     Ok(Expr::StringLiteral(StringLiteral {
-        value: unescape(pair.into_inner().next().unwrap().as_str()),
+        value: unescape(next(&mut pair.into_inner())?.as_str()),
+    }))
+}
+
+fn parse_subquery_expr(expr: Expr, op: Pair<Rule>) -> Result<Expr, ParseError> {
+    let mut pairs = op.into_inner();
+    Ok(Expr::SubqueryExpr(SubqueryExpr {
+        expr: Box::new(expr),
+        at: AtModifier::default(),
+        offset: Duration::default(),
+        range: parse_duration(next(&mut pairs)?)?,
+        step: parse_duration(next(&mut pairs)?)?,
     }))
 }
 
@@ -402,7 +415,7 @@ fn parse_vector_selector(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     let mut pairs = pair.into_inner();
 
     let metric = match pairs.peek().unwrap().as_rule() {
-        Rule::metric => pairs.next().unwrap().as_str().to_string(),
+        Rule::metric => next(&mut pairs)?.as_str().to_string(),
         _ => String::new(),
     };
 
@@ -429,6 +442,17 @@ fn parse_vector_selector(pair: Pair<Rule>) -> Result<Expr, ParseError> {
     }))
 }
 
+// Get the next rule from the rule pairs.
+fn next<'a>(pairs: &mut Pairs<'a, Rule>) -> Result<Pair<'a, Rule>, ParseError> {
+    Ok(pairs.next().ok_or("expect expression")?)
+}
+
+// Unknown expression.
+fn unknown() -> ParseError {
+    ParseError::new("unknown expression".to_string())
+}
+
+// Unescape a string literal.
 fn unescape(s: &str) -> String {
     let mut string = String::new();
     let mut chars = s.chars().peekable();

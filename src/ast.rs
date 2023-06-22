@@ -323,6 +323,12 @@ pub enum AtModifier {
     Timestamp(u64),
 }
 
+impl Default for AtModifier {
+    fn default() -> Self {
+        AtModifier::None
+    }
+}
+
 /// A subquery expression.
 #[derive(Debug)]
 pub struct SubqueryExpr {
